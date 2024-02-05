@@ -1,9 +1,11 @@
 #!/usr/bin/env nextflow
 
 nextflow.enable.dsl=2
-
-params.input_dir = "/scicomp/home-pure/ubt4/mycoplasma/allRawData/*_{1,2}.fastq"
+params.input_dir = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/simReads/*_{R1,R2}.fq"
+//params.input_dir = "/scicomp/home-pure/ubt4/mycoplasma/allRawData/*_{1,2}.fastq"
 params.reference_dir = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/updated/references/*.fna"
+params.ref23S = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/updated/23S_reference_positions.csv"
+params.snp23S = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/updated/23sSNPS.bed"
 
 process assembly {
 
@@ -46,9 +48,6 @@ process bestRef {
     input:
     tuple val(sample), path(ani_res)
 
-    // output:
-    // path("*_bestRef.txt")
-
     output:
     tuple val(sample), env(ref)
 
@@ -57,13 +56,6 @@ process bestRef {
     cat ${ani_res} > ${sample}_allRef.txt
     ref=\$(sort -n -k 3 ${sample}_allRef.txt | tail -n 1 | cut -f2 | sed 's/.fna//')
     """
-
-    // script:
-    // """
-    // cat ${ani_res} > ${sample}_allRef.txt
-    // sort -n -k 3 ${sample}_allRef.txt | tail -n 1 | cut -f1-2  > ${sample}_bestRef.txt
-    // """    
-
 }
 
 process bestRef_track {
@@ -90,14 +82,15 @@ process bestRef_track {
 //     publishDir 'snippyOut'
 
 //     input:
-//     tuple path(isolate), path(reference)
+//     path(reads) 
+//     path(reference)
 
 //     output:
 //     path("*")
 
 //     script:
 //     """
-//     snippy --cpus 16 --outdir ${isolate[0].baseName} --ref ${reference} --R1 ${isolate[0]} --R2 ${isolate[1]} --force
+//     snippy --cpus 16 --outdir ${reads.baseName} --ref ${reference[0]} --R1 ${reads[0]} --R2 ${reads[1]} --force
 //     """
 // }
 
@@ -145,12 +138,32 @@ process freebayes {
     tuple path(bamFile), path(reference)
 
     output:
-    path("*.vcf")
+    path("*")
 
     script:
     """
     freebayes -f ${reference} ${bamFile} > ${bamFile.baseName}.vcf
+    bcftools view ${bamFile.baseName}.vcf -Oz -o ${bamFile.baseName}.vcf.gz
+    bcftools index ${bamFile.baseName}.vcf.gz
     """
+}
+
+process vcf_subset {
+    publishDir 'final_vcf'
+
+    input:
+    path(vcf)
+    tuple path(reference), val(start), val(end)
+    path(snps)
+
+    output:
+    path("*")
+
+    script:
+    """
+    23SsnpAnalysis.py ${vcf} ${reference} ${start} ${end} ${snps}
+    """
+
 }
 
 process amrfinder {
@@ -189,9 +202,11 @@ workflow {
         .combine(references)
         .set {inputSet}
 
+    // classification based on fastANI output
     results = fastANI(inputSet)
     grouped = results.groupTuple()
 
+    // find the best reference and creating a tuple of paired reads and reference
     out = bestRef(grouped)
         .combine(paired_reads, by:0)
         .map { tuple( it[1], *it ) }
@@ -203,12 +218,31 @@ workflow {
     bestRef_track(grouped)
     
     // Phylogenetic analysis
-    //snippyOut = snippy(out)
+    // snippyOut = snippy(paired_reads, references)
 
     // SNP analysis
     minimapOut = minimap2(out)
-    minimapOut.view()
     bamOut = samtools(minimapOut)
-    freebayes(bamOut)
+    vcfout = freebayes(bamOut)
     amrfinder(genomes)
+
+    // snp file
+    snp_regions = channel.fromPath(params.snp23S)
+
+    // as SNPs are present in the 23SrRNA, extract SNPS in that region based on 23SrRNA position in the reference genome
+    ref23S_path = Channel
+                .fromPath(params.ref23S)
+                .splitCsv(header:true)
+                // .map { row -> tuple(row.reference, row.start, row.end)}
+                .map {row -> 
+                    def newRefName = row.reference.minus(~/\.fna$/)
+                    return tuple(newRefName,row.start,row.end)
+               }
+
+    //channel with reference path and start and end locations of the 23S rRNA region
+    combined = ref_label.combine(ref23S_path, by:0)
+                .map {it[1..-1]}
+
+
+    vcf_subset(vcfout, combined, snp_regions)
 }
