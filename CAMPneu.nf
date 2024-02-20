@@ -2,9 +2,9 @@
 
 nextflow.enable.dsl=2
 
-params.input_dir = "/scicomp/home-pure/ubt4/mycoplasma/test_Raw/*_{1,2}.fq"
+params.input_dir = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/simulation_tests/reads_qs/*_R{1,2}.fq"
 // params.input_dir = "/scicomp/home-pure/ubt4/mycoplasma/allRawData/*_{1,2}.fastq"
-params.reference_dir = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/updated/references/*.fna"
+params.reference_dir = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/simulation_tests/references/*.fna"
 params.ref23S = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/updated/23S_reference_positions.csv"
 params.snp23S = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/updated/23sSNPS.bed"
 params.snippyInput = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/updated/inputSnippy.tab"
@@ -17,7 +17,7 @@ process assembly {
     tuple val(sampleID), path(reads)
 
     output:
-    path("*.fasta"), emit: genomes
+    path("*.fasta"), emit: genomes // emit the sample ID as well
 
     script:
     """
@@ -141,7 +141,7 @@ process amrfinder {
 
     script:
     """
-    amrfinder.pl -n ${genomes} -o ${genomes.baseName}.amr.out --plus
+    amrfinder -n ${genomes} -o ${genomes.baseName}.amr.out --plus
     """
 }
 
