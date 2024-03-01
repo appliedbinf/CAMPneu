@@ -22,3 +22,9 @@ conda install -n CAMPneu -c bioconda -c conda-forge art bcftools bedtools fastan
 6.	The snps in the vcf files generated in the freebayes process are then filtered to extract the snps from the 23S ribosomal RNA (the snps mentioned in the paper are in the 23s rRNA region)
 7.	Phylogenetic analysis are done through snippy where the core alignment is then visualized using RAXML.
 
+### Required data:
+1.	Raw reads
+2.	Type 1 and Type 2 reference files
+
+### Additional scripts:
+**23SsnpAnalysis.py**: This scripts takes the output VCF files generated in the freebayes process and filters it to include snps in the 23S ribosomal RNA in the reference genomes. The scripts requires the co-ordinates of the ribosomal RNA region to subset the VCF file. The script also looks for a set of snps that are provided in a bed file. 
