@@ -2,10 +2,10 @@
 
 nextflow.enable.dsl=2
 
-params.input_dir = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/simulation_tests/reads_qs/*_R{1,2}.fq"
+params.input_dir = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/simulation_tests/ART_reads_Qual/*_{1,2}.fq"
 // params.input_dir = "/scicomp/home-pure/ubt4/mycoplasma/allRawData/*_{1,2}.fastq"
-params.reference_dir = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/simulation_tests/references/*.fna"
-params.ref23S = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/updated/23S_reference_positions.csv"
+params.reference_dir = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/updated/references/GCF_001272835.1_ASM127283v1_genomic.fna"
+params.ref23S = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/updated/23S_reference_positions_og.csv"
 params.snp23S = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/updated/23sSNPS.bed"
 params.snippyInput = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/updated/inputSnippy.tab"
 
@@ -113,8 +113,7 @@ process vcf_subset {
     publishDir 'final_vcf'
 
     input:
-    tuple val(ref_label), path(reference), path(vcf), val(start), val(end)
-    path(snps)
+    tuple val(ref_label), path(reference), path(vcf), val(start), val(end), path(snps)
 
     output:
     path("*")
@@ -125,7 +124,6 @@ process vcf_subset {
     bcftools index ${vcf}.gz
     python3 $baseDir/23SsnpAnalysis.py ${vcf}.gz ${reference} ${start} ${end} ${snps}
     """
-
 }
 
 // additional SNP analysis
@@ -152,16 +150,14 @@ process snippy {
     publishDir 'snippyOut'
 
     input:
-    tuple val(ref_label), path(reference)
-    path(snippyInput)
+    tuple val(sampleID), path(reads), val(ref), path(reference)
 
     output:
     path("*")
 
     script:
     """
-    snippy-multi ${snippyInput} --ref ${reference[0]} --cpus 16 > runme.sh
-    sh runme.sh
+    snippy --outdir ${reads[0].baseName} --R1 ${reads[0]} --R2 ${reads[1]} --ref ${reference[0]} --cpus 16
     """
 }
 
@@ -197,22 +193,25 @@ workflow {
     samOut = minimap2(out)
     bamOut = samtools(samOut)
     freebayesOut = freebayes(bamOut)
-        
+
     // snps bed file with known snp regions
     snp_regions = channel.fromPath(params.snp23S)
 
     // as SNPs are present in the 23SrRNA, extract SNPS in that region based on 23SrRNA position in the reference genome
     ref23S_path = Channel.fromPath(params.ref23S)
                 .splitCsv(header:true)
-                .map {row -> 
-                    def newRefName = row.reference.minus(~/\.fna$/)
-                    return tuple(newRefName,row.start,row.end)
-               }
+                .map{row -> tuple(row.reference,row.start,row.end)}
+
     bcfInput = freebayesOut.combine(ref23S_path, by:0)
-    vcf_subset(bcfInput, snp_regions)
+               .combine(snp_regions)
+
+
+    vcf_subset(bcfInput)
     
     // additional SNP analysis
     amrfinder(genomes)
-    snippy(references,params.snippyInput)
+
+    snippyIn = paired_reads.combine(references)
+    snippy(snippyIn)
 
 }
