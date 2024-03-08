@@ -2,12 +2,10 @@
 
 nextflow.enable.dsl=2
 
-params.input_dir = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/simulation_tests/ART_reads_Qual/*_{1,2}.fq"
-// params.input_dir = "/scicomp/home-pure/ubt4/mycoplasma/allRawData/*_{1,2}.fastq"
-params.reference_dir = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/updated/references/GCF_001272835.1_ASM127283v1_genomic.fna"
+params.input_dir = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/simulation_tests/type2reads_vs_type1ref_lowQual/reads/*_{1,2}.fq"
+params.reference_dir = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/simulation_tests/type1reads_vs_type1ref/GCF_000027345.1_ASM2734v1_genomic.fna"
 params.ref23S = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/updated/23S_reference_positions_og.csv"
-params.snp23S = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/updated/23sSNPS.bed"
-params.snippyInput = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/updated/inputSnippy.tab"
+
 
 process assembly {
 
@@ -143,24 +141,6 @@ process amrfinder {
     """
 }
 
-// Phylogenetic analysis 
-
-process snippy {
-
-    publishDir 'snippyOut'
-
-    input:
-    tuple val(sampleID), path(reads), val(ref), path(reference)
-
-    output:
-    path("*")
-
-    script:
-    """
-    snippy --outdir ${reads[0].baseName} --R1 ${reads[0]} --R2 ${reads[1]} --ref ${reference[0]} --cpus 16
-    """
-}
-
 workflow {
 
     Channel.fromFilePairs(params.input_dir)
@@ -194,24 +174,17 @@ workflow {
     bamOut = samtools(samOut)
     freebayesOut = freebayes(bamOut)
 
-    // snps bed file with known snp regions
-    snp_regions = channel.fromPath(params.snp23S)
-
     // as SNPs are present in the 23SrRNA, extract SNPS in that region based on 23SrRNA position in the reference genome
+    // along with path to snps bed file with known snp regions 
     ref23S_path = Channel.fromPath(params.ref23S)
                 .splitCsv(header:true)
-                .map{row -> tuple(row.reference,row.start,row.end)}
+                .map{row -> tuple(row.reference,row.start,row.end,row.snpsFile)}
+
+    ref23S_path.view()
 
     bcfInput = freebayesOut.combine(ref23S_path, by:0)
-               .combine(snp_regions)
-
-
     vcf_subset(bcfInput)
     
     // additional SNP analysis
     amrfinder(genomes)
-
-    snippyIn = paired_reads.combine(references)
-    snippy(snippyIn)
-
 }
