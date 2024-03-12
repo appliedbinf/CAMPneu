@@ -4,7 +4,7 @@ nextflow.enable.dsl=2
 
 params.input_dir = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/simulation_tests/type2reads_vs_type1ref_lowQual/reads/*_{1,2}.fq"
 params.reference_dir = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/simulation_tests/type1reads_vs_type1ref/GCF_000027345.1_ASM2734v1_genomic.fna"
-params.ref23S = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/updated/23S_reference_positions_og.csv"
+params.ref23S = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/updated/23S_reference_positions.csv"
 
 
 process assembly {
@@ -19,8 +19,8 @@ process assembly {
 
     script:
     """
-    spades.py -1 ${reads[0]} -2 ${reads[1]} -o ${sampleID} 
-    mv ./${sampleID}/contigs.fasta ./${sampleID}.fasta
+    unicycler -1 ${reads[0]} -2 ${reads[1]} -o ${sampleID} 
+    mv ./${sampleID}/assembly.fasta ./${sampleID}.fasta
     """
 }
 
