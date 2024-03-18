@@ -7,7 +7,7 @@ nextflow.enable.dsl=2
 // params.ref23S = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/updated/23S_reference_positions.csv"
 
 params.input_dir = "/home/wengland7/campneu_testfiles/*_{1,2}.fastq"
-params.reference_dir = "${baseDir}/references/"
+params.reference_dir = "${baseDir}/references/GCF_000027345.1_ASM2734v1_genomic.fna"
 params.ref23S = "${baseDir}/23S_reference_positions.csv"
 params.reference_type2="${baseDir}/references/GCF_001272835.1_ASM127283v1_genomic.fna"
 params.known_snps="${baseDir}/knownSNPs.txt"
