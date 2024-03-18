@@ -2,10 +2,15 @@
 
 nextflow.enable.dsl=2
 
-params.input_dir = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/simulation_tests/type2reads_vs_type1ref_lowQual/reads/*_{1,2}.fq"
-params.reference_dir = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/simulation_tests/type1reads_vs_type1ref/GCF_000027345.1_ASM2734v1_genomic.fna"
-params.ref23S = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/updated/23S_reference_positions.csv"
+// params.input_dir = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/simulation_tests/type2reads_vs_type1ref_lowQual/reads/*_{1,2}.fq"
+// params.reference_dir = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/simulation_tests/type1reads_vs_type1ref/GCF_000027345.1_ASM2734v1_genomic.fna"
+// params.ref23S = "/scicomp/home-pure/ubt4/mycoplasma/nextflow/updated/23S_reference_positions.csv"
 
+params.input_dir = "/home/wengland7/campneu_testfiles/*_{1,2}.fastq"
+params.reference_dir = "${baseDir}/references/"
+params.ref23S = "${baseDir}/23S_reference_positions.csv"
+params.reference_type2="${baseDir}/references/GCF_001272835.1_ASM127283v1_genomic.fna"
+params.known_snps="${baseDir}/knownSNPs.txt"
 
 process assembly {
 
@@ -22,6 +27,26 @@ process assembly {
     unicycler -1 ${reads[0]} -2 ${reads[1]} -o ${sampleID} 
     mv ./${sampleID}/assembly.fasta ./${sampleID}.fasta
     """
+}
+
+process snpCheck {
+
+    publishDir 'snpCheck'
+
+    input:
+    tuple path(assembly), val(sample), path(t2reference), path(snps)
+
+    output:
+    path("${sample}.known_snps")
+
+    script:
+    """
+    nucmer -p ${sample} ${t2reference} ${assembly}
+    dnadiff -d ${sample}.delta -p ${sample}
+    show-snps -ClrT ${sample}.delta > ${sample}.snpcheck
+    bash ${baseDir}/snpcheck.sh ${sample}.snpcheck ${snps} > ${sample}.known_snps
+    """
+
 }
 
 process fastANI{
@@ -148,6 +173,21 @@ workflow {
 
     genomes = assembly(paired_reads)
 
+    Channel.fromPath(params.reference_type2)
+        .set {t2ref}
+
+    Channel.fromPath(params.known_snps)
+        .set {known_snps}
+
+    // align genomes to Type 2 reference to identify known SNPs between Types 1 & 2
+    genomes
+        .map(file -> tuple(file, file.simpleName.replaceFirst(/.fasta/,"")))
+        .combine(t2ref)
+        .combine(known_snps)
+        .set {snpSet}
+
+    snpCheck(snpSet)
+
     references = Channel.fromPath(params.reference_dir)
         .map(file -> tuple(file.baseName.replaceAll(/.fna/,""), file))
 
@@ -156,7 +196,8 @@ workflow {
         .map(file -> tuple(file, file.simpleName.replaceFirst(/.fasta/,"")))
         .combine(references)
         .set {inputSet}
-    
+
+
     // getting results of fastANI and grouping based on the samples
     results = fastANI(inputSet)
     grouped = results.groupTuple()
