@@ -4,7 +4,6 @@ nextflow.enable.dsl=2
 
 params.input_dir = "/home/mkadam7/CAMPneu/Simulated_Reads/*_{1,2}.fq"
 params.reference_dir = "/home/mkadam7/CAMPneu/References/*.fna"
-params.ref23S = "/home/mkadam7/CAMPneu/23S_reference_positions.csv"
 params.krakendb = "/home/mkadam7/CAMPneu/minikraken2_v2_8GB_201904_UPDATE/"
 params.refType = "/home/mkadam7/CAMPneu/References/Reference_type.csv"
 params.snpsBed = "/home/mkadam7/CAMPneu/test/snps_ref1.bed"
@@ -305,8 +304,6 @@ process vcf_subset {
     python3 $baseDir/23SsnpAnalysis.py ${vcf}.gz ${reference} ${start} ${end} ${snps}
     """
 }
-
-
 
 workflow {
 
