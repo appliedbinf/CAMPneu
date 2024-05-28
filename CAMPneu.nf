@@ -180,7 +180,7 @@ process bestRef {
 // Individual reports for all samples are generated here
 process combine_reports{
 
-    publishDir "sample_reports"
+    publishDir "Sample_reports"
     
     input:
     tuple val(sample), path(kraken), path(fastp), path(coverage), path(bestRef)
@@ -210,7 +210,7 @@ process combine_reports{
 
 process writeToFile {
 
-    publishDir "summary"
+    publishDir "Summary"
 
     input:
     val(sampleSummaries)
