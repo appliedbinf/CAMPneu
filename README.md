@@ -32,3 +32,19 @@ conda install -n CAMPneu -c bioconda -c conda-forge art bcftools bedtools fastan
 
 ### Additional scripts:
 **23SsnpAnalysis.py**: This scripts takes the output VCF files generated in the freebayes process and filters it to include snps in the 23S ribosomal RNA in the reference genomes. The scripts requires the co-ordinates of the ribosomal RNA region to subset the VCF file. The script also looks for a set of snps that are provided in a bed file. 
+
+### Outputs:
+The scripts generates output directories for each process which have the files generated in the process
+
+#### Process Outputs: 
+1. Kraken: kraken reports and kraken summaries for all the paired end reads 
+2. fastp: fastp reports and quality filtered paired end reads
+3. Coverage_check: samtools coverage report and coverage filtered paired end reads
+4. assembly: assembled fasta of the QC filtered samples and empty fasta of the failed samples
+5. fastANI: fastANI report
+6. bestReference: fastANI report with only the subtyped reference for the sample
+
+#### Summary
+1. Sample_reports: Reports for each sample summarizing QC and type information
+2. Summary: Report for the entire run w=summarizing which samples have Passed or failed the QC and the SNPs identified for macrolide resistance
+
