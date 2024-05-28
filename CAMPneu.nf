@@ -2,7 +2,7 @@
 
 nextflow.enable.dsl=2
 
-params.input_dir = "/home/mkadam7/CAMPneu/Simulated_Reads/*_{1,2}.fq"
+params.input_dir = "/home/mkadam7/CAMPneu/Simulated_Reads/*_{1,2}.{fastq,fq}"
 params.reference_dir = "/home/mkadam7/CAMPneu/References/*.fna"
 params.krakendb = "/home/mkadam7/CAMPneu/minikraken2_v2_8GB_201904_UPDATE/"
 params.refType = "/home/mkadam7/CAMPneu/References/Reference_type.csv"
