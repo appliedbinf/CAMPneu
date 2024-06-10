@@ -2,12 +2,42 @@
 
 nextflow.enable.dsl=2
 
-params.input_dir = "/home/mkadam7/CAMPneu/Simulated_Reads/*_{1,2}.{fastq,fq}"
-params.reference_dir = "/home/mkadam7/CAMPneu/References/*.fna"
-params.krakendb = "/home/mkadam7/CAMPneu/minikraken2_v2_8GB_201904_UPDATE/"
-params.refType = "/home/mkadam7/CAMPneu/References/Reference_type.csv"
-params.snpsBed = "/home/mkadam7/CAMPneu/test/snps_ref1.bed"
+params.input_dir = null
+params.reference_dir = null
+params.krakendb = "null"
+params.snpsBed = "null"
+params.help = false
 
+if (params.help) {
+        help = """nextflow run CAMPneu.nf --input_dir <fastq_reads_dir> --reference_dir <reference_genome_dir>
+              |
+              |
+              |Required arguments:  
+              |  --input_dir     Location of the input directory with the Paired Fastq Reads  
+              |  --reference_dir Location of directory containing fna files for Mycoplasma Pneumoniae References 
+              |                  Type 1 - GCF_000027345.1_ASM2734v1_genomic.fna
+              |                  Type 2 - GCF_001272835.1_ASM127283v1_genomic.fna
+              |  --krakendb      Path to the Kraken database for Taxonomic Classification 
+              |                  Database can be found at : https://genome-idx.s3.amazonaws.com/kraken/k2_standard_08gb_20240112.tar.gz
+              |                  Database ".tar.gz" can be unzipped using: tar -xvzf k2_standard_08gb_20240112.tar.gz
+              |  --bed           A bed file containing the positions of Macrolide Resistant snps which is available along with the pipeline
+              |     
+              |Optional arguments:  
+              |  --help           Print this message and exit""".stripMargin()
+
+    println(help)
+    exit(0)
+}
+
+if (!params.input_dir) {
+    println "ERROR: Missing required parameter: --input_dir"
+    exit(1)
+}
+
+if (!params.reference_dir) {
+    println "ERROR: Missing required parameter: --reference_dir"
+    exit(2)
+}
 
 process kraken {
 
@@ -31,9 +61,10 @@ process kraken {
 
     awk -F'\\t' '{if (\$4 == "G") {\$4 = "Genus"} else if (\$4 == "S") {\$4 = "Species"}; if ((\$4 == "Genus" || \$4 == "Species") && \$1 > 5) {gsub(/[[:space:]]+\$/, "", \$NF); print \$1 "\t" \$4 "\t" \$6}}' ${sampleID}.report > ${sampleID}.tsv
     echo -e "Percent_Reads_Covered\tRank\tScientific_name" > header.tsv
-    cat header.tsv ${sampleID}.tsv > ${sampleID}_Kraken.tsv
-    sp=\$(grep -w 'Species' ${sampleID}_Kraken.tsv | cut -f3 | sed 's/^[ \t]*//' | sed 's/ /_/g')
-    percent=\$(grep -w 'Species' ${sampleID}_Kraken.tsv | cut -f1 | sed 's/^[ \t]*//')
+    cat header.tsv ${sampleID}.tsv > ${sampleID}_Kraken_1.tsv
+    sp=\$(grep -w 'Species' ${sampleID}_Kraken_1.tsv | cut -f3 | sed 's/^[ \t]*//' | sed 's/ /_/g')
+    percent=\$(grep -w 'Species' ${sampleID}_Kraken_1.tsv | cut -f1 | sed 's/^[ \t]*//')
+    column -t ${sampleID}_Kraken_1.tsv > ${sampleID}_Kraken.tsv
     """
 }
 
@@ -46,7 +77,7 @@ process fastp {
 
     output:
     tuple val(sampleID), path("${reads[0].baseName}_qc.fq"), path("${reads[1].baseName}_qc.fq"), env(qc), emit: fastp_out
-    tuple val(sampleID), path("${reads[0].baseName}.tsv"), emit: fastp_report
+    tuple val(sampleID), path("${reads[0].baseName}_fastpQC.tsv"), emit: fastp_report
     tuple val(sampleID), env(rate), env(qc), emit: fastp_summary
 
 
@@ -64,6 +95,7 @@ process fastp {
     jq -r '.summary | [.before_filtering.total_reads, .after_filtering.total_reads, .before_filtering.q30_rate] | @csv' ${reads[0].baseName}.json | awk -F ',' '{print \$1 "\\t" \$2 "\\t" \$3}' > ${reads[0].baseName}.tsv
     echo -e "Total_reads_before_filtering\tTotal_reads_after_filtering\tQ30_rate" | cat - ${reads[0].baseName}.tsv > temp &&  mv temp ${reads[0].baseName}.tsv
     rate=\$(cut -f 3 ${reads[0].baseName}.tsv | grep '^[0-9].*')
+    column -t ${reads[0].baseName}.tsv > ${reads[0].baseName}_fastpQC.tsv
     """
 
 }
@@ -76,9 +108,9 @@ process coverage_check {
     tuple val(sampleID), path(qc_read1), path(qc_read2), val(qc), val(ref), path(reference)
 
     output:
-    tuple val(sampleID), path(qc_read1), path(qc_read2), env(coverage), emit: cov_out
-    tuple val(sampleID), path("${sampleID}.cov.txt"), emit: cov_report
-    tuple val(sampleID), env(percent), env(coverage), emit: cov_summary
+    tuple val(sampleID), path(qc_read1), path(qc_read2), env(qc), emit: cov_out
+    tuple val(sampleID), path("${sampleID}.cov.tsv"), emit: cov_report
+    tuple val(sampleID), env(percent), env(coverage), env(qc), emit: cov_summary
 
     script:
     """
@@ -86,13 +118,16 @@ process coverage_check {
         echo "Sample failed coverage check" > ${sampleID}.cov.txt
         coverage="FAIL"
         percent=0
+        qc="FAIL"
     else
         minimap2 -ax sr -o ${sampleID}.sam ${reference} ${qc_read1} ${qc_read2}
         samtools view -b ${sampleID}.sam > ${sampleID}.bam
         samtools sort ${sampleID}.bam > ${sampleID}.sorted.bam
         samtools coverage ${sampleID}.sorted.bam > ${sampleID}.cov.txt
-        coverage=\$(awk 'NR==2 { if (\$7 > 90) print "PASS"; else print "FAIL" }' ${sampleID}.cov.txt)
+        coverage=\$(awk 'NR==2 { if (\$7 < 10) print "FAIL"; else if (\$7 <=30 )print "PASS-Coverage<30x"; else print "PASS-Coverage>30x"}' ${sampleID}.cov.txt)
         percent=\$(cut -f 7 ${sampleID}.cov.txt | grep '^[0-9].*')
+        column -t ${sampleID}.cov.txt > ${sampleID}.cov.tsv
+        qc="PASS"
     fi
     """
 
@@ -106,7 +141,7 @@ process assembly {
     tuple val(sampleID), path(read1), path(read2), val(qc)
 
     output:
-    tuple val(sampleID), path("${sampleID}.fasta"), val(qc), emit: genomes // emit the sample ID as well
+    tuple val(sampleID), path("${sampleID}.fasta"), val(qc), emit: genomes 
 
     script:
     """
@@ -136,7 +171,8 @@ process fastANI{
     """
     if [ "${qc}" == "PASS" ]; then
         fastANI -q ${assembly} -r ${reference} -o ${sample}_fastANI_1.out
-        awk '{print \$0, "${type}"}' ${sample}_fastANI_1.out > ${sample}_${ref_label}_fastANI.out
+        awk -F'\t' 'BEGIN {OFS="\t"} {print \$0, "${type}"}' ${sample}_fastANI_1.out > ${sample}_fastANI_2.out
+        cut -f1-3,6 ${sample}_fastANI_2.out > ${sample}_${ref_label}_fastANI.out
     else 
         touch ${sample}_fastANI.out
         echo ">${sample}" > ${sample}_fastANI.out
@@ -155,8 +191,8 @@ process bestRef {
 
     output:
     tuple val(sample), env(ref), env(type_new), env(qc_new), emit: bestRef_out
-    tuple val(sample), path("${sample}_bestRef.txt"), emit:bestRef_report
-    tuple val(sample), env(type_new), env(qc_new), emit: bestRef_summary 
+    tuple val(sample), path("${sample}_bestRef.tsv"), emit:bestRef_report
+    tuple val(sample), env(type_new), emit: bestRef_summary 
 
     script:
     """
@@ -164,12 +200,13 @@ process bestRef {
         cat ${ani_res} > ${sample}_allRef.txt
         sort -n -k 3 ${sample}_allRef.txt | tail -n 1 > ${sample}_bestRef.txt
         ref=\$(less ${sample}_bestRef.txt | cut -f2 | sed 's/.fna//')
-        type_new=\$(less ${sample}_bestRef.txt | cut -f5 | cut -d' ' -f2)
+        type_new=\$(less ${sample}_bestRef.txt | cut -f4 | cut -d' ' -f2)
+        echo -e "sampleID\tReference\tANI_value\ttype" | cat - ${sample}_bestRef.txt | column -t > temp &&  mv temp  ${sample}_bestRef.tsv
         qc_new="PASS"
 
     else
         touch ${sample}_bestRef.txt
-        echo "No best reference because sample failed QC" >> ${sample}_bestRef.txt
+        echo "No best reference because sample failed QC" >> ${sample}_bestRef.tsv
         ref="NO_BEST_REF"
         qc_new="FAIL"
         type_new="no_type"
@@ -180,14 +217,14 @@ process bestRef {
 // Individual reports for all samples are generated here
 process combine_reports{
 
-    publishDir "Sample_reports"
+    publishDir "sample_reports"
     
     input:
     tuple val(sample), path(kraken), path(fastp), path(coverage), path(bestRef)
 
     output:
     path("${sample}_report.out")
-
+    
     script:
     """
     touch ${sample}_report.out
@@ -197,7 +234,7 @@ process combine_reports{
     echo "Quality Filtering using Fastp\nSamples that have Qscore < 30 are marked as FAILED\n" >> ${sample}_report.out
     cat ${fastp} >> ${sample}_report.out
     echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.out
-    echo "Coverage Filtering using Samtools Coverage\nSamples below 100x are marked as FAILED\n" >> ${sample}_report.out
+    echo "Coverage Filtering using Samtools Coverage\nSamples below 10x are marked as FAILED\n" >> ${sample}_report.out
     cat ${coverage} >> ${sample}_report.out
     echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.out
     echo "FASTani to select the best reference\n" >> ${sample}_report.out
@@ -208,29 +245,24 @@ process combine_reports{
 
 // create a summary for everything done so far
 
-process writeToFile {
+process summary1 {
 
-    publishDir "Summary"
+    publishDir "summary"
 
     input:
     val(sampleSummaries)
 
     output:
-    path("final_summary_1.txt"), emit: summary1
+    path("final_summary.txt"), emit: summary1
 
     script:
+    def header = "SampleID\tKraken_Percent\tKraken_Class\tFastp_Score_Rate\tCoverage_X\tType\tQC"
+    def row = sampleSummaries.join("\n")
     """
-    echo "SampleID Kraken_Percent Kraken_Class Fastp_Score_Rate Coverage_X Type QC" > summary.txt
-    for summary in "${sampleSummaries.join('\t')}"; do
-        echo "\$summary" | sed 's/,/\\t/g' >> summary.txt
-    done
-    mv summary.txt final_summary.txt
-    sed -i 's/sample/\\n&/g' final_summary.txt
-    header=\$(head -n 1 final_summary.txt)
-    data=\$(tail -n +2 final_summary.txt | sort -nk1)
-    echo "Summary of Kraken classification and QC thresholds\nReads below a qscore of 30 are marked as FAILED and dropped\nReads with Coverage below 100x are marked as FAILED and dropped\n" > final_summary_1.txt
-    echo "\$header\n\$data" | column -t >> final_summary_1.txt
-
+    touch final_summary_1.txt
+    echo ${header} >> final_summary_1.txt
+    echo '${row}' >> final_summary_1.txt
+    column -t final_summary_1.txt > final_summary.txt
     """
 }
 
@@ -295,7 +327,7 @@ process vcf_subset {
     tuple val(sample), path(reference), path(vcf), val(start), val(end), path(snps)
 
     output:
-    path("*")
+    tuple val(sample), path("*genomicidentified.snps.txt"), path("*genomicall23S.subset.txt")
 
     script:
     """
@@ -305,19 +337,44 @@ process vcf_subset {
     """
 }
 
+process amrfinder {
+    publishDir 'amrfinderplus'
+
+    input:
+    tuple val(sample), path(fasta), val(qc)
+
+    output:
+    path("*.out")
+
+    script:
+    """
+    if [ "${qc}" == "PASS" ]; then
+        amrfinder -n ${fasta} -o ${fasta.baseName}.amr.out
+    else
+        touch ${fasta.baseName}.amr.out
+        echo "FAILED SAMPLE" >> ${fasta.baseName}.amr.out
+    fi
+    """
+}
+
 workflow {
 
-    Channel.fromFilePairs(params.input_dir)
-           .set {paired_reads}         
+    Channel.fromFilePairs("${params.input_dir}/*_{1,2,R1,R2,r1,r2}.{fastq,fq,FASTQ,FQ}")
+           .ifEmpty{ error "NO {reads}.fastq/fq files found in the specified directory: ${params.input_dir}"}
+           .set {paired_reads}   
+
 
     // Run Kraken and generate Kraken classification and report
     kraken_out = kraken(paired_reads, params.krakendb)
+    kraken_summary = kraken_out.kraken_summary
+              .map{ line -> line.collect {it.replaceAll(' ','|')}}
 
     // Run fastp to assign PASS or FAIL check to reads based on Q-scores
     qual_check_out = fastp(paired_reads)
 
     // References
-    references = Channel.fromPath(params.reference_dir)
+    references = Channel.fromPath("${params.reference_dir}/*.fna")
+        .ifEmpty{ error "NO {reference}.fna files found in the specified directory: ${params.reference_dir}"}
         .map(file -> tuple(file.baseName.replaceAll(/.fna/,""), file))
 
     // Create input for coverage check where PASS reads with go through coverage filter
@@ -327,14 +384,13 @@ workflow {
     // Run the coverage check
     cov_check = coverage_check(input)
 
-    // // assembling the QC and Coverage threshold passed reads
+    // assembling the QC and Coverage threshold passed reads
     genomes = assembly(cov_check.cov_out)
 
-    // Read a csv file that has the type for the references
-    ref_type = Channel.fromPath(params.refType)
-        .splitCsv(header:true)
-        .map{row  -> tuple(row.Reference,row.Type)}
-        .combine(references, by:0)
+    ref_type = Channel.of(
+        ["GCF_000027345.1_ASM2734v1_genomic", "type1"],
+        ["GCF_001272835.1_ASM127283v1_genomic", "type2"]
+    ).combine(references, by:0)
 
     // create tuple of genome combinations with the references
     genomes
@@ -348,7 +404,7 @@ workflow {
     // getting the best reference for each isolate/sample 
     out = bestRef(grouped)
 
-    // Combined report for each sample
+    // Combined report for each sample 
     combined = kraken_out.kraken_report
             .combine(qual_check_out.fastp_report, by:0)
             .combine(cov_check.cov_report, by:0)  
@@ -356,24 +412,18 @@ workflow {
 
     combine_reports(combined)
 
-        // summary
-    //kraken_out.kraken_summary.view()
-    //qual_check_out.fastp_summary.view()
-    //cov_check.cov_summary.view()
-    //out.bestRef_summary.view()
-
-    //summary_values = [sampleID ,kraken_percent, kraken_class, fastp_score_rate, coverage_x, type, qc]
-    summary_values = kraken_out.kraken_summary
+    // summary
+    //summary_values = [sampleID ,kraken_percent, kraken_class, fastp_score_rate, coverage_x, cov_qc, type]
+    summary_values = kraken_summary
                     .combine(qual_check_out.fastp_summary, by:0)
                     .map {it[0..3]}
                     .combine(cov_check.cov_summary, by:0)
-                    .map {it[0..4]}
+                    .map {it[0..5]}
                     .combine(out.bestRef_summary, by:0)
-                    .collect()
+                    .collect{ summary -> summary.join('\t')}
                     .set { sampleSummaries }
 
-    writeToFile(sampleSummaries)
-
+    summary1(sampleSummaries)
 
     // Once the combined reports are generated, the passed samples are moved ahead for further processing
 
@@ -389,6 +439,8 @@ workflow {
 
     inputVcf = Channel.of(["120057", "122961", params.snpsBed])
     inputVcf = freebayesOut.combine(inputVcf)
-    vcf_subset(inputVcf)
+    vcf_out = vcf_subset(inputVcf)
+
+    amrfinder(genomes)
 
 }
