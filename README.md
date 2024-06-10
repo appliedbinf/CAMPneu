@@ -9,12 +9,27 @@ While extensible, early drafts of CAMPneu are targeted for Illumina paired-end s
 
 ### Command to run the nextflow script:
 ```
-nextflow run CAMPneu.nf
+nextflow run CAMPneu.nf --help
+
+nextflow run CAMPneu.nf --input_dir <fastq_reads_dir> --reference_dir <reference_genome_dir>
+
+Required arguments:  
+  --input_dir     Location of the input directory with the Paired Fastq Reads  
+  --reference_dir Location of directory containing fna files for Mycoplasma Pneumoniae References 
+                  Type 1 - GCF_000027345.1_ASM2734v1_genomic.fna
+                  Type 2 - GCF_001272835.1_ASM127283v1_genomic.fna
+  --krakendb      Path to the Kraken database for Taxonomic Classification 
+                  Database can be found at : https://genome-idx.s3.amazonaws.com/kraken/k2_standard_08gb_20240112.tar.gz
+                  Database ".tar.gz" can be unzipped using: tar -xvzf k2_standard_08gb_20240112.tar.gz
+  --bed           A bed file containing the positions of Macrolide Resistant snps which is available along with the pipeline
+              
+Optional arguments:  
+  --help           Print this message and exit
 ```
 
 ### Conda installation of all packages:
 ```
-conda install -n CAMPneu -c bioconda -c conda-forge art bcftools bedtools fastani freebayes minimap2 ncbi-amrfinderplus nextflow raxml samtools snippy spades unicycler 
+conda install appliedbinf::campneu  
 ```
 
 ### NextFlow script step-by-step workflow:
