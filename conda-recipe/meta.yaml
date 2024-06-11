@@ -1,0 +1,40 @@
+{% set name = "CAMPneu" %}
+{% set version = "1.1.0" %}
+ 
+package:
+  name: {{ name|lower }}
+  version: {{ version }}
+  
+source:
+  path: ../
+  #git_rev:
+  #git_url: https://github.com/appliedbinf/CAMPneu.git
+ 
+requirements:
+  build:
+    - python
+    - setuptools
+    - skip: True  # [win]
+ 
+  host:
+    - python
+    - pip
+ 
+  run:
+    - python
+    - minimap2
+    - samtools
+    - fastp
+    - fastANI
+    - bcftools
+    - kraken2
+    - unicycler
+    - freebayes
+ 
+ 
+# build:#   noarch: python
+
+ 
+about:
+  home: https://github.com/appliedbinf/CAMPneu/
+  license: MIT
