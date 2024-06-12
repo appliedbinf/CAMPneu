@@ -29,7 +29,7 @@ Optional arguments:
 
 ### Conda installation of all packages:
 ```
-conda install appliedbinf::campneu  
+conda install -c bioconda -c conda-forge appliedbinf::campneu  
 ```
 
 ### NextFlow script step-by-step workflow:
