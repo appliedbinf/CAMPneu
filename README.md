@@ -8,6 +8,16 @@ While extensible, early drafts of CAMPneu are targeted for Illumina paired-end s
 (3) identification of known SNPs conferring macrolide-resistance and any other AMR-related genes present within the sample.
 
 ### Command to run the nextflow script:
+
+CAMPneu has been set up to explicitly run on rosalind/scicomp resources for which prerequites are required to be done. Prior to running the script, the nextflow and conda modules need to be loaded.
+
+```
+module load nextflow
+module load conda
+```
+
+Once NextFlow and Conda are activated, the "CAMPneu' conda package will be created and activated from within the nextflow processes. Then the script can be run.
+
 ```
 nextflow run CAMPneu.nf --help
 
