@@ -4,8 +4,8 @@ nextflow.enable.dsl=2
 
 params.input_dir = null
 params.reference_dir = null
-params.krakendb = "null"
-params.snpsBed = "null"
+params.krakendb =null
+params.snpsBed = null
 params.help = false
 
 if (params.help) {
@@ -21,7 +21,7 @@ if (params.help) {
               |                  Database can be found at : https://genome-idx.s3.amazonaws.com/kraken/k2_standard_08gb_20240112.tar.gz
               |                  Database ".tar.gz" can be unzipped using: tar -xvzf k2_standard_08gb_20240112.tar.gz
               |  --bed           A bed file containing the positions of Macrolide Resistant snps which is available along with the pipeline
-              |     
+              |              
               |Optional arguments:  
               |  --help           Print this message and exit""".stripMargin()
 
@@ -146,7 +146,7 @@ process assembly {
     script:
     """
     if [ "${qc}" == "PASS" ]; then
-        unicycler -1 ${read1} -2 ${read2} -o ${sampleID} 
+        unicycler -1 ${read1} -2 ${read2} -o ${sampleID} --min_fasta_length 500 
         mv ./${sampleID}/assembly.fasta ./${sampleID}.fasta
     else
         touch ${sampleID}.fasta
@@ -327,14 +327,30 @@ process vcf_subset {
     tuple val(sample), path(reference), path(vcf), val(start), val(end), path(snps)
 
     output:
-    tuple val(sample), path("*genomicidentified.snps.txt"), path("*genomicall23S.subset.txt")
+    tuple val(sample), path("*identified.snps.txt"), path("*all23S.subset.txt")
 
     script:
     """
-    bcftools view ${vcf} -Oz -o ${vcf}.gz
+    bcftools view -i 'QUAL>=30' ${vcf} -Oz -o ${vcf}.gz
     bcftools index ${vcf}.gz
     python3 $baseDir/23SsnpAnalysis.py ${vcf}.gz ${reference} ${start} ${end} ${snps}
     """
+}
+
+process snp_summary {
+    publishDir 'snp_summary'
+
+    input:
+    tuple val(sample), path(mrSnps)
+
+    output:
+    path("${sample}_snps.txt")
+
+    script:
+    """
+    touch ${sample}_snps.txt
+    """
+
 }
 
 process amrfinder {
@@ -440,6 +456,7 @@ workflow {
     inputVcf = Channel.of(["120057", "122961", params.snpsBed])
     inputVcf = freebayesOut.combine(inputVcf)
     vcf_out = vcf_subset(inputVcf)
+    vcf_out.view()
 
     amrfinder(genomes)
 
