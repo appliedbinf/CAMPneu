@@ -9,6 +9,8 @@ params.snpsBed = null
 params.help = false
 params.download_db = false
 
+///// HELP MESSAGE /////
+
 if (params.help) {
         help = """nextflow run CAMPneu.nf --input_dir <fastq_reads_dir> --reference_dir <reference_genome_dir>
               |
@@ -30,6 +32,8 @@ if (params.help) {
     println(help)
     exit(0)
 }
+
+///// HELP PARAMETER CHECKS FOR INPUT ////
 
 def missing_flags = []
 
@@ -74,12 +78,37 @@ if(params.download_db) {
     kraken_db_path = file(params.krakendb)
 }
 
+///// PREPROCESSING OF INPUT READS /////
+
+process gunzip_reads {
+
+    input:
+    tuple val(sampleID), path(reads)
+
+    output:
+    tuple val(sampleID), path("${reads[0].baseName}_unzip.fastq"), path("${reads[1].baseName}_unzip.fastq")
+
+    script:
+    """
+    if [[${reads[0]} == *.gz]]; then
+        gunzip -c ${reads[0]} -> ${reads[0].baseName}_unzip.fastq
+    else
+        mv ${reads[0]} ${reads[0].baseName}_unzip.fastq
+    fi
+    if [[${reads[1]} == *.gz]]; then
+        gunzip -c ${reads[1]} -> ${reads[1].baseName}_unzip.fastq
+    else
+        mv ${reads[1]} ${reads[1].baseName}_unzip.fastq
+    fi  
+    """
+}
+
 process kraken {
 
     publishDir 'Kraken'
 
     input:
-    tuple val(sampleID), path(reads), path(db)   
+    tuple val(sampleID), path(read1), path(read2), path(db)   
 
     output:
     tuple path("${sampleID}.Kraken.out"), path("${sampleID}.report"), emit: kraken_out
@@ -91,7 +120,7 @@ process kraken {
     kraken2 -db ${db} \
     --threads 16 \
     --report ${sampleID}.report \
-    --paired ${reads[0]} ${reads[1]} > ${sampleID}.Kraken.out
+    --paired ${read1} ${read2} > ${sampleID}.Kraken.out
 
     awk -F'\\t' '{if (\$4 == "G") {\$4 = "Genus"} else if (\$4 == "S") {\$4 = "Species"}; if ((\$4 == "Genus" || \$4 == "Species") && \$1 > 5) {gsub(/[[:space:]]+\$/, "", \$NF); print \$1 "\t" \$4 "\t" \$6}}' ${sampleID}.report > ${sampleID}.tsv
     echo -e "Percent_Reads_Covered\tRank\tScientific_name" > header.tsv
@@ -436,19 +465,22 @@ process amrfinder {
 
 workflow {
 
-    Channel.fromFilePairs("${params.input_dir}/*_{1,2,R1,R2,r1,r2}.{fastq,fq,FASTQ,FQ}")
+    Channel.fromFilePairs("${params.input_dir}/*_{1,2,R1,R2,r1,r2}.{fastq,fq,FASTQ,FQ,fastq.gz,fq.gz,FASTQ.GZ,FQ.GZ}")
            .ifEmpty{ error "NO {reads}.fastq/fq files found in the specified directory: ${params.input_dir}"}
            .set {paired_reads}   
 
-    // Run Kraken and generate Kraken classification and report
-    kraken_input = paired_reads.combine(Channel.fromPath(kraken_db_path))
+    // unzip reads if needed
+    unzipped_reads = gunzip_reads(paired_reads)
+    kraken_input = unzipped_reads.combine(Channel.fromPath(kraken_db_path))
+
+    // // Run Kraken and generate Kraken classification and report
     kraken_out = kraken(kraken_input)
     kraken_summary = kraken_out.kraken_summary
               .map{ line -> line.collect {it.replaceAll(' ','|')}}
 
 
     // Run fastp to assign PASS or FAIL check to reads based on Q-scores
-    qual_check_out = fastp(paired_reads)
+    qual_check_out = fastp(unzipped_reads)
 
     // References
     references = Channel.fromPath("${params.reference_dir}/*.fna")
@@ -528,5 +560,4 @@ workflow {
 
     // amrfinder
     amrfinder(genomes)
-
 }
