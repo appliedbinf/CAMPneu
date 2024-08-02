@@ -4,7 +4,7 @@ nextflow.enable.dsl=2
 
 params.input_dir = null
 params.reference_dir = null
-params.krakendb =null
+params.krakendb = null
 params.snpsBed = null
 params.help = false
 
@@ -17,7 +17,7 @@ if (params.help) {
               |  --reference_dir Location of directory containing fna files for Mycoplasma Pneumoniae References 
               |                  Type 1 - GCF_000027345.1_ASM2734v1_genomic.fna
               |                  Type 2 - GCF_001272835.1_ASM127283v1_genomic.fna
-              |  --krakendb      Path to the Kraken database for Taxonomic Classification 
+              |  --krakendb      Path to the Kraken database for Taxonomic Classification.  
               |                  Database can be found at : https://genome-idx.s3.amazonaws.com/kraken/k2_standard_08gb_20240112.tar.gz
               |                  Database ".tar.gz" can be unzipped using: tar -xvzf k2_standard_08gb_20240112.tar.gz
               |  --bed           A bed file containing the positions of Macrolide Resistant snps which is available along with the pipeline
@@ -170,7 +170,7 @@ process fastANI{
     script:
     """
     if [ "${qc}" == "PASS" ]; then
-        fastANI -q ${assembly} -r ${reference} -o ${sample}_fastANI_1.out
+        fastANI -q ${assembly} -r ${reference} --minFraction 0.5 -o ${sample}_fastANI_1.out
         awk -F'\t' 'BEGIN {OFS="\t"} {print \$0, "${type}"}' ${sample}_fastANI_1.out > ${sample}_fastANI_2.out
         cut -f1-3,6 ${sample}_fastANI_2.out > ${sample}_${ref_label}_fastANI.out
     else 
@@ -247,22 +247,22 @@ process combine_reports{
 
 process summary1 {
 
-    publishDir "summary"
-
     input:
     val(sampleSummaries)
 
     output:
-    path("final_summary.txt"), emit: summary1
+    path("final_summary.txt")
 
     script:
     def header = "SampleID\tKraken_Percent\tKraken_Class\tFastp_Score_Rate\tCoverage_X\tType\tQC"
     def row = sampleSummaries.join("\n")
     """
     touch final_summary_1.txt
+    newlines="Summary of Kraken Classification and QC thresholds\nReads below a qscore of 30 are marked as FAILED and dropped\nReads with coverage below 10X are marked as failed and dropped\n"
     echo ${header} >> final_summary_1.txt
     echo '${row}' >> final_summary_1.txt
     column -t final_summary_1.txt > final_summary.txt
+    echo -e "\$newlines" | cat - final_summary.txt > temp.txt && mv temp.txt final_summary.txt
     """
 }
 
@@ -337,20 +337,47 @@ process vcf_subset {
     """
 }
 
-process snp_summary {
-    publishDir 'snp_summary'
+process each_snp_summary {
 
     input:
-    tuple val(sample), path(mrSnps)
+    tuple val(sample), path(mrSnps), path(allSnps)
 
     output:
-    path("${sample}_snps.txt")
+    tuple val(sample), path("${sample}_snps.txt")
 
     script:
     """
-    touch ${sample}_snps.txt
+    if [ -s "${mrSnps}" ]; then
+        touch ${sample}_snps.txt
+        cut -f1-2,4-5 ${mrSnps} >> ${sample}_snps.txt
+        awk '{ new_col = \$2 - 120055; print "${sample}", \$0, \$3 new_col \$4 }' ${sample}_snps.txt > ${sample}_snps_out.txt
+        awk '{\$2=""; print \$0}' ${sample}_snps_out.txt > ${sample}_snps.txt
+    else
+        touch ${sample}_snps.txt
+        echo "No macrolide resistant SNPs observed" >> ${sample}_snps_1.txt
+        awk '{ print "${sample}", \$0 }' ${sample}_snps_1.txt > ${sample}_snps.txt
+    fi
     """
 
+}
+
+process combine_snp_summary {
+    publishDir 'summary'
+
+    input:
+    path(snp_files)
+    path(mid_summary)
+
+    output:
+    path("summary_stats.txt")
+
+    script:
+    """
+    echo -e "Sample\tPos\tALT\tREF\tSNP" >> header.tsv
+    cat header.tsv ${snp_files} | column -t > snp_summary.txt
+    echo -e "\nMacrolide resistant SNP analysis\n" | cat - snp_summary.txt > temp.txt && mv temp.txt snp_summary.txt
+    cat ${mid_summary} snp_summary.txt > summary_stats.txt
+    """
 }
 
 process amrfinder {
@@ -439,7 +466,7 @@ workflow {
                     .collect{ summary -> summary.join('\t')}
                     .set { sampleSummaries }
 
-    summary1(sampleSummaries)
+    summary1 = summary1(sampleSummaries)
 
     // Once the combined reports are generated, the passed samples are moved ahead for further processing
 
@@ -456,8 +483,15 @@ workflow {
     inputVcf = Channel.of(["120057", "122961", params.snpsBed])
     inputVcf = freebayesOut.combine(inputVcf)
     vcf_out = vcf_subset(inputVcf)
-    vcf_out.view()
 
+    // summarising results from SNP analysis
+    snpSumOut = each_snp_summary(vcf_out)
+                .map { it[1] }
+                .collect()
+    
+    combine_snp_summary(snpSumOut, summary1)
+
+    // amrfinder
     amrfinder(genomes)
 
 }
