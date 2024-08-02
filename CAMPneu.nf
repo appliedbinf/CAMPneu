@@ -7,6 +7,7 @@ params.reference_dir = null
 params.krakendb = null
 params.snpsBed = null
 params.help = false
+params.download_db = false
 
 if (params.help) {
         help = """nextflow run CAMPneu.nf --input_dir <fastq_reads_dir> --reference_dir <reference_genome_dir>
@@ -17,7 +18,8 @@ if (params.help) {
               |  --reference_dir Location of directory containing fna files for Mycoplasma Pneumoniae References 
               |                  Type 1 - GCF_000027345.1_ASM2734v1_genomic.fna
               |                  Type 2 - GCF_001272835.1_ASM127283v1_genomic.fna
-              |  --krakendb      Path to the Kraken database for Taxonomic Classification.  
+              |  --krakendb      Path to the Kraken database for Taxonomic Classification. 
+              |  --download_db   Download the kraken db if database is not available/already downloaded 
               |                  Database can be found at : https://genome-idx.s3.amazonaws.com/kraken/k2_standard_08gb_20240112.tar.gz
               |                  Database ".tar.gz" can be unzipped using: tar -xvzf k2_standard_08gb_20240112.tar.gz
               |  --bed           A bed file containing the positions of Macrolide Resistant snps which is available along with the pipeline
@@ -29,14 +31,47 @@ if (params.help) {
     exit(0)
 }
 
+def missing_flags = []
+
 if (!params.input_dir) {
-    println "ERROR: Missing required parameter: --input_dir"
-    exit(1)
+    missing_flags << "--input_dir"
 }
 
 if (!params.reference_dir) {
-    println "ERROR: Missing required parameter: --reference_dir"
-    exit(2)
+    missing_flags << "--reference_dir"
+}
+
+if (!params.krakendb && !params.download_db) {
+    missing_flags << "--krakendb or --download_db"
+}
+
+if (missing_flags) {
+    println "ERROR: Missing required parameters: ${missing_flags.join(', ')}"
+    exit(1)
+}
+
+def kraken_db_path = ""
+
+if(params.download_db) {
+    def kraken_url = 'https://genome-idx.s3.amazonaws.com/kraken/k2_standard_08gb_20240112.tar.gz'
+    def download_dir = 'kraken_db'
+    def tar_file = "${download_dir}/k2_standard_08gb_20240112.tar.gz"
+
+    // create download directory
+    new File(download_dir).mkdirs()
+
+    // download database
+    println "Downloading Kraken database from ${kraken_url}..."
+    ["curl", "-o", tar_file, kraken_url].execute().waitFor()
+
+    // extract database
+    println "Extracting kraken database..."
+    ["tar","-xvzf", tar_file, "-C", download_dir].execute().waitFor()
+
+    // assign to params.krakendb
+    kraken_db_path = file(download_dir)
+} else {
+    kraken_db_path = file(params.krakendb)
 }
 
 process kraken {
@@ -44,8 +79,7 @@ process kraken {
     publishDir 'Kraken'
 
     input:
-    tuple val(sampleID), path(reads)
-    path(db)   
+    tuple val(sampleID), path(reads), path(db)   
 
     output:
     tuple path("${sampleID}.Kraken.out"), path("${sampleID}.report"), emit: kraken_out
@@ -406,11 +440,12 @@ workflow {
            .ifEmpty{ error "NO {reads}.fastq/fq files found in the specified directory: ${params.input_dir}"}
            .set {paired_reads}   
 
-
     // Run Kraken and generate Kraken classification and report
-    kraken_out = kraken(paired_reads, params.krakendb)
+    kraken_input = paired_reads.combine(Channel.fromPath(kraken_db_path))
+    kraken_out = kraken(kraken_input)
     kraken_summary = kraken_out.kraken_summary
               .map{ line -> line.collect {it.replaceAll(' ','|')}}
+
 
     // Run fastp to assign PASS or FAIL check to reads based on Q-scores
     qual_check_out = fastp(paired_reads)
