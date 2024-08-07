@@ -57,26 +57,52 @@ if (missing_flags) {
 def kraken_db_path = ""
 
 if(params.download_db) {
-    def kraken_url = 'https://genome-idx.s3.amazonaws.com/kraken/k2_standard_08gb_20240112.tar.gz'
-    def download_dir = 'kraken_db'
+    // def kraken_url = 'https://genome-idx.s3.amazonaws.com/kraken/k2_standard_08gb_20240112.tar.gz'
+    // def download_dir = 'kraken_db'
+    // def tar_file = "${download_dir}/k2_standard_08gb_20240112.tar.gz"
+
+    def download_dir = 'krakendb'
     def tar_file = "${download_dir}/k2_standard_08gb_20240112.tar.gz"
+    def kraken_url = 'https://genome-idx.s3.amazonaws.com/kraken/k2_standard_08gb_20240112.tar.gz'
 
-    // create download directory
-    new File(download_dir).mkdirs()
+    if (new File(download_dir).exists()) {
+        println "Kraken database already exists at ${download_dir}. Skipping download."
+        kraken_db_path = file(download_dir)
+    } else {
+        // create download directory
+        new File(download_dir).mkdirs()
 
-    // download database
-    println "Downloading Kraken database from ${kraken_url}..."
-    ["curl", "-o", tar_file, kraken_url].execute().waitFor()
+        // download database
+        println "Downloading Kraken database from ${kraken_url}..."
+        ["curl", "-o", tar_file, kraken_url].execute().waitFor()
 
-    // extract database
-    println "Extracting kraken database..."
-    ["tar","-xvzf", tar_file, "-C", download_dir].execute().waitFor()
+        // extract database
+        println "Extracting kraken database..."
+        ["tar","-xvzf", tar_file, "-C", download_dir].execute().waitFor()
 
-    // assign to params.krakendb
-    kraken_db_path = file(download_dir)
+        // assign to params.krakendb
+        kraken_db_path = file(download_dir)
+    }
 } else {
     kraken_db_path = file(params.krakendb)
 }
+
+    // // create download directory
+    //new File(download_dir).mkdirs()
+
+    // // download database
+    // println "Downloading Kraken database from ${kraken_url}..."
+    // ["curl", "-o", tar_file, kraken_url].execute().waitFor()
+
+    // // extract database
+    // println "Extracting kraken database..."
+    // ["tar","-xvzf", tar_file, "-C", download_dir].execute().waitFor()
+
+    // assign to params.krakendb
+    // kraken_db_path = file(download_dir)
+// } else {
+    // kraken_db_path = file(params.krakendb)
+// }
 
 ///// PREPROCESSING OF INPUT READS /////
 
