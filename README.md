@@ -23,20 +23,22 @@ Once NextFlow and Conda are activated, the "CAMPneu' conda package will be creat
 ```
 nextflow run CAMPneu.nf --help
 
-nextflow run CAMPneu.nf --input_dir <fastq_reads_dir> --reference_dir <reference_genome_dir>
+Setup Run: Download minikraken database (https://genome-idx.s3.amazonaws.com/kraken/k2_standard_08gb_20240112.tar.gz) and 
+           M.pneumoniae M129 (type 1) and FH (type 2) reference files
+Command: nextflow run CAMPneu.nf --download_db
 
-Required arguments:  
-  --input_dir     Location of the input directory with the Paired Fastq Reads  
-  --reference_dir Location of directory containing fna files for Mycoplasma Pneumoniae References 
-                  Type 1 - GCF_000027345.1_ASM2734v1_genomic.fna
-                  Type 2 - GCF_001272835.1_ASM127283v1_genomic.fna
-  --krakendb      Path to the Kraken database for Taxonomic Classification 
-                  Database can be found at : https://genome-idx.s3.amazonaws.com/kraken/k2_standard_08gb_20240112.tar.gz
-                  Database ".tar.gz" can be unzipped using: tar -xvzf k2_standard_08gb_20240112.tar.gz
-  --bed           A bed file containing the positions of Macrolide Resistant snps which is available along with the pipeline
-              
+Default Run: Run all the processes in pipeline using the downloaded database and references
+Command: nextflow run CAMPneu.nf --input <fastq_reads_dir> --output <output_dir>
+
+Custom Run: Run all the processes in pipeline using the downloaded database and references with a user specified SNP bed file
+Command: nextflow run CAMPneu.nf --input <fastq_reads_dir> --output <output_dir> --snpFile <snp_bed_file>
+         
+Required arguments:     
+  --input     Path to the Paired Fastq Reads directory  
+  --output    Directory where process outputs are saved          
 Optional arguments:  
-  --help           Print this message and exit
+  --snpFile   Path to the custom SNP bed file
+  --help      Print this message and exit
 ```
 
 ### Conda installation of all packages:
@@ -44,18 +46,20 @@ Optional arguments:
 conda install -c bioconda -c conda-forge appliedbinf::campneu  
 ```
 
-### NextFlow script step-by-step workflow:
-1.	De Novo Assembly raw reads: Raw reads are assembles using SPADES denovo assembler
-2.	Estimation of best reference using FastANI: The assemblies generated in the steps above are then aligned to the type1 and type 2 references to infer the best reference/most similar type to the sample/isolate assembly
-3.	The raw reads are then aligned to the best reference using minimap2 to generate the sam alignment file. 
-4.	Sam files are then converted to bamfiles and sorted using samtools.
-5.	Freebayes is then used to detect genetic variants with respect to just one reference. 
-6.	The snps in the vcf files generated in the freebayes process are then filtered to extract the snps from the 23S ribosomal RNA (the snps mentioned in the paper are in the 23s rRNA region)
+### NextFlow script step-by-step workflow:	
+1. Taxonomic classification with Kraken2 to test for contaminants or erroneous data
+2.	Quality score check is done using fastp and reads below the quality score of 30 are dropped
+3.	Samtools Coverage is used to fail samples with coverages less than 10x
+4.	Raw reads are assembled using Unicycler denovo assembler. 
+5.	Estimation of best reference using FastANI: The assemblies generated in the steps above are then aligned to the type1 and type 2 references to infer the best reference/most similar type to the sample/isolate assembly
+6.	The raw reads are then aligned to the best reference using minimap2 to generate the sam alignment file. 
+7.	Sam files are then converted to bamfiles and sorted using samtools.
+8.	Freebayes is then used to detect genetic variants with respect to just one reference. 
+9.	The snps in the vcf files generated in the freebayes process are then filtered to extract the snps from the 23S ribosomal RNA (the snps mentioned in the paper are in the 23s rRNA region)
 
 ### Required inputs: 
 1. Illumina paired-end sequences
-2. Mpneumoniae Type 1(GCF_000027345.1) and Type 2 (GCF_001272835.1) reference files
-3. 23SsnpAnalysis.py: Python script for VCF manipulation and analysis 
+2. 23SsnpAnalysis.py: Python script for VCF manipulation and analysis 
 
 ### Additional scripts:
 **23SsnpAnalysis.py**: This scripts takes the output VCF files generated in the freebayes process and filters it to include snps in the 23S ribosomal RNA in the reference genomes. The scripts requires the co-ordinates of the ribosomal RNA region to subset the VCF file. The script also looks for a set of snps that are provided in a bed file. 
