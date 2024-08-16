@@ -9,11 +9,13 @@ While extensible, early drafts of CAMPneu are targeted for Illumina paired-end s
 
 ### Command to run the nextflow script:
 
-CAMPneu has been set up to explicitly run on rosalind/scicomp resources for which prerequites are required to be done. Prior to running the script, the nextflow and conda modules need to be loaded.
+CAMPneu has been set up to explicitly run on rosalind/scicomp resources for which prerequites are required to be done. Prior to running the script, the nextflow and conda/mamba modules need to be loaded.
 
 ```
 module load nextflow
-module load conda
+module load miniconda3/20230728 
+mamba install -n campneu -c bioconda -c conda-forge -c appliedbinf campneu 
+mamba activate campneu 
 ```
 
 Once NextFlow and Conda are activated, the "CAMPneu' conda package will be created and activated from within the nextflow processes. Then the script can be run.
