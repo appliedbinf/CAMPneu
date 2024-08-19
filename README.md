@@ -47,15 +47,14 @@ conda install -c bioconda -c conda-forge appliedbinf::campneu
 ```
 
 ### NextFlow script step-by-step workflow:	
-1. Taxonomic classification with Kraken2 to test for contaminants or erroneous data
-2.	Quality score check is done using fastp and reads below the quality score of 30 are dropped
-3.	Samtools Coverage is used to fail samples with coverages less than 10x
-4.	Raw reads are assembled using Unicycler denovo assembler. 
-5.	Estimation of best reference using FastANI: The assemblies generated in the steps above are then aligned to the type1 and type 2 references to infer the best reference/most similar type to the sample/isolate assembly
-6.	The raw reads are then aligned to the best reference using minimap2 to generate the sam alignment file. 
-7.	Sam files are then converted to bamfiles and sorted using samtools.
-8.	Freebayes is then used to detect genetic variants with respect to just one reference. 
-9.	The snps in the vcf files generated in the freebayes process are then filtered to extract the snps from the 23S ribosomal RNA (the snps mentioned in the paper are in the 23s rRNA region)
+1. Kraken2 Taxonomic Classification: Classifies input sequences based on a pre-built database.
+2. Quality Control with Fastp: Profiles and filters reads to ensure high-quality data.
+3. Coverage Assessment with Samtools: Calculates mean depth to evaluate sequencing coverage.
+4. De Novo Assembly with Unicycler: Reconstructs microbial genomes without a reference.
+5. ANI Calculation: Determines the best match by comparing the assembled genomes to reference genomes.
+6. Alignment with Minimap2: Aligns reads to the best-matched reference genome.
+7. Variant Calling with FreeBayes: Identifies SNPs and genetic variations against a type 1 reference.
+8. Macrolide-Resistant SNP Identification: Detects SNPs associated with macrolide resistance
 
 ### Required inputs: 
 1. Illumina paired-end sequences
