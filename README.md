@@ -47,14 +47,14 @@ conda install -c bioconda -c conda-forge appliedbinf::campneu
 ```
 
 ### NextFlow script step-by-step workflow:	
-1. Kraken2 Taxonomic Classification: Classifies input sequences based on a pre-built database.
-2. Quality Control with Fastp: Profiles and filters reads to ensure high-quality data.
-3. Coverage Assessment with Samtools: Calculates mean depth to evaluate sequencing coverage.
-4. De Novo Assembly with Unicycler: Reconstructs microbial genomes without a reference.
-5. ANI Calculation: Determines the best match by comparing the assembled genomes to reference genomes.
-6. Alignment with Minimap2: Aligns reads to the best-matched reference genome.
-7. Variant Calling with FreeBayes: Identifies SNPs and genetic variations against a type 1 reference.
-8. Macrolide-Resistant SNP Identification: Detects SNPs associated with macrolide resistance
+1. **Kraken2 Taxonomic Classification:** Classifies input sequences based on a pre-built database.
+2. **Quality Control with Fastp:** Profiles and filters reads to ensure high-quality data.
+3. **Coverage Assessment with Samtools:** Calculates mean depth to evaluate sequencing coverage.
+4. **De Novo Assembly with Unicycler:** Reconstructs microbial genomes without a reference.
+5. **ANI Calculation:** Determines the best match by comparing the assembled genomes to reference genomes.
+6. **Alignment with Minimap2:** Aligns reads to the best-matched reference genome.
+7. **Variant Calling with FreeBayes:** Identifies SNPs and genetic variations against a type 1 reference.
+8. **Macrolide-Resistant SNP Identification:** Detects SNPs associated with macrolide resistance
 
 ### Required inputs: 
 1. Illumina paired-end sequences
