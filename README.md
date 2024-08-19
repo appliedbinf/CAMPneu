@@ -56,6 +56,14 @@ conda install -c bioconda -c conda-forge appliedbinf::campneu
 7. **Variant Calling with FreeBayes:** Identifies SNPs and genetic variations against a type 1 reference.
 8. **Macrolide-Resistant SNP Identification:** Detects SNPs associated with macrolide resistance
 
+### Cut Off Thresholds ###
+The pipeline sets specific thresholds for input paired reads/samples. Any reads or samples that do not meet these thresholds are marked as failed.
+1. Kraken2 Percentage of Reads assigned to *M. Pneumoniea* > 90
+2. Average Q score > 30
+3. Coverage > 10x
+4. ANI to reference > 95
+5. SNP call quality > 100; Depth > 10
+
 ### Required inputs: 
 1. Illumina paired-end sequences
 2. 23SsnpAnalysis.py: Python script for VCF manipulation and analysis 
