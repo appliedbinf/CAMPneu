@@ -1,111 +1,86 @@
-#!/usr/bin/env nextflow
-
-nextflow.enable.dsl=2
-
-params.input_dir = null
-params.reference_dir = null
-params.krakendb = null
-params.snpsBed = null
-params.help = false
+nextflow.enable.dsl = 2
+ 
 params.download_db = false
+params.input = ''
+params.output = ''
+params.snpFile = ''
+params.kraken_db = './krakendb/minikraken_8GB_202003'
+params.reference1 = '/references/GCF_000027345.1_ASM2734v1_genomic.fna'
+params.reference2 = '/references/GCF_001272835.1_ASM127283v1_genomic.fna'
+params.help = false
 
 ///// HELP MESSAGE /////
 
 if (params.help) {
-        help = """nextflow run CAMPneu.nf --input_dir <fastq_reads_dir> --reference_dir <reference_genome_dir>
+        help = """
+              |Setup Run: Download minikraken database (https://genome-idx.s3.amazonaws.com/kraken/k2_standard_08gb_20240112.tar.gz) and 
+              |           M.pneumoniae M129 (type 1) and FH (type 2) reference files
+              |Command: nextflow run CAMPneu.nf --download_db
               |
+              |Default Run: Run all the processes in pipeline using the downloaded database and references
+              |Command: nextflow run CAMPneu.nf --input <fastq_reads_dir> --output <output_dir>
               |
-              |Required arguments:  
-              |  --input_dir     Location of the input directory with the Paired Fastq Reads  
-              |  --reference_dir Location of directory containing fna files for Mycoplasma Pneumoniae References 
-              |                  Type 1 - GCF_000027345.1_ASM2734v1_genomic.fna
-              |                  Type 2 - GCF_001272835.1_ASM127283v1_genomic.fna
-              |  --krakendb      Path to the Kraken database for Taxonomic Classification. 
-              |  --download_db   Download the kraken db if database is not available/already downloaded 
-              |                  Database can be found at : https://genome-idx.s3.amazonaws.com/kraken/k2_standard_08gb_20240112.tar.gz
-              |                  Database ".tar.gz" can be unzipped using: tar -xvzf k2_standard_08gb_20240112.tar.gz
-              |  --bed           A bed file containing the positions of Macrolide Resistant snps which is available along with the pipeline
-              |              
+              |Custom Run: Run all the processes in pipeline using the downloaded database and references with a user specified SNP bed file
+              |Command: nextflow run CAMPneu.nf --input <fastq_reads_dir> --output <output_dir> --snpFile <snp_bed_file>
+              |         
+              |Required arguments:     
+              |  --input     Path to the Paired Fastq Reads directory  
+              |  --output    Directory where process outputs are saved          
               |Optional arguments:  
-              |  --help           Print this message and exit""".stripMargin()
+              |  --snpFile   Path to the custom SNP bed file
+              |  --help      Print this message and exit""".stripMargin()
 
     println(help)
     exit(0)
 }
 
-///// HELP PARAMETER CHECKS FOR INPUT ////
+process downloadKrakenDB {
+    publishDir 'krakendb'
+    output:
+    path('minikraken_8GB_202003')
+ 
+    script:
+    """
+    mkdir -p minikraken_8GB_202003
+    wget -O minikraken_8GB_202003.tgz https://genome-idx.s3.amazonaws.com/kraken/k2_standard_08gb_20240112.tar.gz
+    tar -xvzf minikraken_8GB_202003.tgz -C minikraken_8GB_202003
+    rm minikraken_8GB_202003.tgz
+    """
+}
+ 
+process downloadReferences {
+    publishDir 'references'
 
-def missing_flags = []
-
-if (!params.input_dir) {
-    missing_flags << "--input_dir"
+    output:
+    path('GCF_000027345.1_ASM2734v1_genomic.fna')
+    path('GCF_001272835.1_ASM127283v1_genomic.fna')
+ 
+    script:
+    """
+    wget -O GCF_000027345.1_ASM2734v1_genomic.fna.gz ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/027/345/GCF_000027345.1_ASM2734v1/GCF_000027345.1_ASM2734v1_genomic.fna.gz
+    wget -O GCF_001272835.1_ASM127283v1_genomic.fna.gz ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/001/272/835/GCF_001272835.1_ASM127283v1/GCF_001272835.1_ASM127283v1_genomic.fna.gz
+    gunzip GCF_000027345.1_ASM2734v1_genomic.fna.gz
+    gunzip GCF_001272835.1_ASM127283v1_genomic.fna.gz
+    """
 }
 
-if (!params.reference_dir) {
-    missing_flags << "--reference_dir"
+process createBedFile {
+    output:
+    path("snp_ref1.bed"), emit: bed
+
+    script:
+    """
+    cat > snp_ref1.bed <<EOF
+    NC_000912.1 120272	120273
+    NC_000912.1	121167	121168
+    NC_000912.1	122118	122119
+    NC_000912.1	122119	122120
+    NC_000912.1	122486	122487
+    NC_000912.1	122666	122667
+    EOF
+    """
 }
-
-if (!params.krakendb && !params.download_db) {
-    missing_flags << "--krakendb or --download_db"
-}
-
-if (missing_flags) {
-    println "ERROR: Missing required parameters: ${missing_flags.join(', ')}"
-    exit(1)
-}
-
-def kraken_db_path = ""
-
-if(params.download_db) {
-    // def kraken_url = 'https://genome-idx.s3.amazonaws.com/kraken/k2_standard_08gb_20240112.tar.gz'
-    // def download_dir = 'kraken_db'
-    // def tar_file = "${download_dir}/k2_standard_08gb_20240112.tar.gz"
-
-    def download_dir = 'krakendb'
-    def tar_file = "${download_dir}/k2_standard_08gb_20240112.tar.gz"
-    def kraken_url = 'https://genome-idx.s3.amazonaws.com/kraken/k2_standard_08gb_20240112.tar.gz'
-
-    if (new File(download_dir).exists()) {
-        println "Kraken database already exists at ${download_dir}. Skipping download."
-        kraken_db_path = file(download_dir)
-    } else {
-        // create download directory
-        new File(download_dir).mkdirs()
-
-        // download database
-        println "Downloading Kraken database from ${kraken_url}..."
-        ["curl", "-o", tar_file, kraken_url].execute().waitFor()
-
-        // extract database
-        println "Extracting kraken database..."
-        ["tar","-xvzf", tar_file, "-C", download_dir].execute().waitFor()
-
-        // assign to params.krakendb
-        kraken_db_path = file(download_dir)
-    }
-} else {
-    kraken_db_path = file(params.krakendb)
-}
-
-    // // create download directory
-    //new File(download_dir).mkdirs()
-
-    // // download database
-    // println "Downloading Kraken database from ${kraken_url}..."
-    // ["curl", "-o", tar_file, kraken_url].execute().waitFor()
-
-    // // extract database
-    // println "Extracting kraken database..."
-    // ["tar","-xvzf", tar_file, "-C", download_dir].execute().waitFor()
-
-    // assign to params.krakendb
-    // kraken_db_path = file(download_dir)
-// } else {
-    // kraken_db_path = file(params.krakendb)
-// }
-
-///// PREPROCESSING OF INPUT READS /////
-
+ 
 process gunzip_reads {
 
     input:
@@ -128,18 +103,19 @@ process gunzip_reads {
     fi  
     """
 }
-
+ 
 process kraken {
 
-    publishDir 'Kraken'
+    publishDir "${params.output}/Kraken"
 
     input:
     tuple val(sampleID), path(read1), path(read2), path(db)   
 
     output:
-    tuple path("${sampleID}.Kraken.out"), path("${sampleID}.report"), emit: kraken_out
+    tuple val(sampleID), path(read1), path(read2), env(qc), emit: kraken_out
     tuple val(sampleID), path("${sampleID}_Kraken.tsv"), emit: kraken_report
     tuple val(sampleID), env(percent), env(sp), emit: kraken_summary
+
 
     script:
     """
@@ -153,45 +129,53 @@ process kraken {
     cat header.tsv ${sampleID}.tsv > ${sampleID}_Kraken_1.tsv
     sp=\$(grep -w 'Species' ${sampleID}_Kraken_1.tsv | cut -f3 | sed 's/^[ \t]*//' | sed 's/ /_/g')
     percent=\$(grep -w 'Species' ${sampleID}_Kraken_1.tsv | cut -f1 | sed 's/^[ \t]*//')
-    column -t ${sampleID}_Kraken_1.tsv > ${sampleID}_Kraken.tsv
+    qc="FAIL"
+    if [ \$(echo "\${percent} >= 90" | bc) -eq 1 ]; then
+        qc="PASS"
+        column -t ${sampleID}_Kraken_1.tsv > ${sampleID}_Kraken.tsv
+    else
+        touch ${sampleID}_Kraken.tsv
+        echo "Sample failed classfication check." > ${sampleID}_Kraken.tsv       
+    fi
     """
 }
 
 process fastp {
 
-    publishDir 'fastp'
+    publishDir "${params.output}/fastp"
 
     input:
-    tuple val(sampleID), path(reads)
+    tuple val(sampleID), path(read1), path(read2), val(qc)
 
     output:
-    tuple val(sampleID), path("${reads[0].baseName}_qc.fq"), path("${reads[1].baseName}_qc.fq"), env(qc), emit: fastp_out
-    tuple val(sampleID), path("${reads[0].baseName}_fastpQC.tsv"), emit: fastp_report
-    tuple val(sampleID), env(rate), env(qc), emit: fastp_summary
+    tuple val(sampleID), path("${read1.baseName}_qc.fq"), path("${read2.baseName}_qc.fq"), env(fastp_qc), emit: fastp_out
+    tuple val(sampleID), path("${read1.baseName}_fastpQC.tsv"), emit: fastp_report
+    tuple val(sampleID), env(rate), env(fastp_qc), emit: fastp_summary
 
 
     shell:
     """
-    fastp \
-      --in1 ${reads[0]} \
-      --in2 ${reads[1]} \
-      --out1 ${reads[0].baseName}_qc.fq \
-      --out2 ${reads[1].baseName}_qc.fq \
-      --average_qual 30 \
-      --json ${reads[0].baseName}.json
+    if [ "${qc}" == "PASS" ]; then
+        fastp \
+        --in1 ${read1} \
+        --in2 ${read2} \
+        --out1 ${read1.baseName}_qc.fq \
+        --out2 ${read2.baseName}_qc.fq \
+        --average_qual 30 \
+        --json ${read1.baseName}.json
 
-    qc=\$(if [ "\$(jq '.summary.before_filtering.q30_bases > 0' ${reads[0].baseName}.json)" = true ]; then echo "PASS"; else echo "FAIL"; fi)
-    jq -r '.summary | [.before_filtering.total_reads, .after_filtering.total_reads, .before_filtering.q30_rate] | @csv' ${reads[0].baseName}.json | awk -F ',' '{print \$1 "\\t" \$2 "\\t" \$3}' > ${reads[0].baseName}.tsv
-    echo -e "Total_reads_before_filtering\tTotal_reads_after_filtering\tQ30_rate" | cat - ${reads[0].baseName}.tsv > temp &&  mv temp ${reads[0].baseName}.tsv
-    rate=\$(cut -f 3 ${reads[0].baseName}.tsv | grep '^[0-9].*')
-    column -t ${reads[0].baseName}.tsv > ${reads[0].baseName}_fastpQC.tsv
+        fastp_qc=\$(if [ "\$(jq '.summary.before_filtering.q30_bases > 0' ${read1.baseName}.json)" = true ]; then echo "PASS"; else echo "FAIL"; fi)
+        jq -r '.summary | [.before_filtering.total_reads, .after_filtering.total_reads, .before_filtering.q30_rate] | @csv' ${read1.baseName}.json | awk -F ',' '{print \$1 "\\t" \$2 "\\t" \$3}' > ${read1.baseName}.tsv
+        echo -e "Total_reads_before_filtering\tTotal_reads_after_filtering\tQ30_rate" | cat - ${read1.baseName}.tsv > temp &&  mv temp ${read1.baseName}.tsv
+        rate=\$(cut -f 3 ${read1.baseName}.tsv | grep '^[0-9].*')
+        column -t ${read1.baseName}.tsv > ${read1.baseName}_fastpQC.tsv
+    fi
     """
-
 }
 
 process coverage_check {
 
-    publishDir 'Coverage_check'
+    publishDir "${params.output}/Coverage_check"
 
     input:
     tuple val(sampleID), path(qc_read1), path(qc_read2), val(qc), val(ref), path(reference)
@@ -224,7 +208,7 @@ process coverage_check {
 
 process assembly {
 
-    publishDir 'assemblies'
+    publishDir "${params.output}/assemblies"
 
     input:
     tuple val(sampleID), path(read1), path(read2), val(qc)
@@ -247,7 +231,7 @@ process assembly {
 
 process fastANI{
 
-    publishDir 'fastANI'
+    publishDir "${params.output}/fastANI"
 
     input:
     tuple val(sample), path(assembly), val(qc), val(ref_label), val(type), path(reference)
@@ -268,12 +252,11 @@ process fastANI{
         echo "Sample skipped due to QC failure" >> ${sample}_${ref_label}_fastANI.out
     fi
     """
-
 }
 
 process bestRef {
 
-    publishDir 'bestReference'
+    publishDir "${params.output}/bestReference"
 
     input:
     tuple val(sample), path(ani_res), val(ref_label), path(reference), val(type), val(qc)
@@ -303,36 +286,94 @@ process bestRef {
     """
 }
 
-// Individual reports for all samples are generated here
-process combine_reports{
+process minimap2 {
 
-    publishDir "sample_reports"
-    
+    publishDir "${params.output}/minimap2"
+
     input:
-    tuple val(sample), path(kraken), path(fastp), path(coverage), path(bestRef)
+    tuple val(sample), path(read1), path(read2), val(qc), val(type), path(reference)
 
     output:
-    path("${sample}_report.out")
-    
+    tuple val(sample), path("${reference}"), path("${read1.baseName}.sam")
+
     script:
     """
-    touch ${sample}_report.out
-    echo "Kraken Classfication\n" >> ${sample}_report.out
-    cat ${kraken} >> ${sample}_report.out
-    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.out
-    echo "Quality Filtering using Fastp\nSamples that have Qscore < 30 are marked as FAILED\n" >> ${sample}_report.out
-    cat ${fastp} >> ${sample}_report.out
-    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.out
-    echo "Coverage Filtering using Samtools Coverage\nSamples below 10x are marked as FAILED\n" >> ${sample}_report.out
-    cat ${coverage} >> ${sample}_report.out
-    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.out
-    echo "FASTani to select the best reference\n" >> ${sample}_report.out
-    cat ${bestRef} >> ${sample}_report.out
-    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.out
+    minimap2 -ax sr -o ${read1.baseName}.sam ${reference} ${read1} ${read2}
     """
 }
 
-// create a summary for everything done so far
+process samtools {
+
+    publishDir "${params.output}/samtools"
+
+    input:
+    tuple val(sample), path(reference), path(minimapOut)
+
+    output:
+    tuple val(sample), path("${reference}"), path("${minimapOut.baseName}_${reference}.sorted.bam")
+
+    script:
+    """
+    samtools view -b ${minimapOut} > ${minimapOut.baseName}_${reference}.bam
+    samtools sort ${minimapOut.baseName}_${reference}.bam > ${minimapOut.baseName}_${reference}.sorted.bam
+    samtools index ${minimapOut.baseName}_${reference}.sorted.bam
+    """
+}
+
+process freebayes {
+
+    publishDir "${params.output}/freebayes"
+
+    input:
+    tuple val(sample), path(reference), path(bamFile)
+
+    output:
+    tuple val(sample), path(reference), path("${bamFile.baseName}.vcf")
+
+    script:
+    """
+    freebayes -f ${reference} --ploidy 1 ${bamFile} > ${bamFile.baseName}.vcf
+    """
+}
+
+process vcf_subset {
+    publishDir "${params.output}/final_vcf"
+
+    input:
+    tuple val(sample), path(reference), path(vcf), val(start), val(end), path(snps)
+
+    output:
+    tuple val(sample), path("*identified.snps.txt"), path("*all23S.subset.txt")
+
+    script:
+    """
+    bcftools view -i 'QUAL>=30' ${vcf} -Oz -o ${vcf}.gz
+    bcftools index ${vcf}.gz
+    python3 $baseDir/23SsnpAnalysis.py ${vcf}.gz ${reference} ${start} ${end} ${snps}
+    """
+}
+
+process amrfinder {
+    publishDir "${params.output}/amrfinderplus"
+
+    input:
+    tuple val(sample), path(fasta), val(qc)
+
+    output:
+    path("*.out")
+
+    script:
+    """
+    if [ "${qc}" == "PASS" ]; then
+        amrfinder -n ${fasta} -o ${fasta.baseName}.amr.out
+    else
+        touch ${fasta.baseName}.amr.out
+        echo "FAILED SAMPLE" >> ${fasta.baseName}.amr.out
+    fi
+    """
+}
+
+///// SUMMARIES
 
 process summary1 {
 
@@ -352,77 +393,6 @@ process summary1 {
     echo '${row}' >> final_summary_1.txt
     column -t final_summary_1.txt > final_summary.txt
     echo -e "\$newlines" | cat - final_summary.txt > temp.txt && mv temp.txt final_summary.txt
-    """
-}
-
-// The previous steps are done to QC the input reads and subtype them into type1 or type2
-// Once reads have passed both Quality and Coverage threshold, all the passed reads are then aligned to type1 reference only
-// Freebayes is then used find the SNPs and compare them to known list of SNPS
-
-process minimap2 {
-
-    publishDir 'minimap2'
-
-    input:
-    tuple val(sample), path(read1), path(read2), val(qc), val(type), path(reference)
-
-    output:
-    tuple val(sample), path("${reference}"), path("${read1.baseName}.sam")
-
-    script:
-    """
-    minimap2 -ax sr -o ${read1.baseName}.sam ${reference} ${read1} ${read2}
-    """
-}
-
-process samtools {
-
-    publishDir 'samtools'
-
-    input:
-    tuple val(sample), path(reference), path(minimapOut)
-
-    output:
-    tuple val(sample), path("${reference}"), path("${minimapOut.baseName}_${reference}.sorted.bam")
-
-    script:
-    """
-    samtools view -b ${minimapOut} > ${minimapOut.baseName}_${reference}.bam
-    samtools sort ${minimapOut.baseName}_${reference}.bam > ${minimapOut.baseName}_${reference}.sorted.bam
-    samtools index ${minimapOut.baseName}_${reference}.sorted.bam
-    """
-}
-
-process freebayes {
-
-    publishDir 'freebayes'
-
-    input:
-    tuple val(sample), path(reference), path(bamFile)
-
-    output:
-    tuple val(sample), path(reference), path("${bamFile.baseName}.vcf")
-
-    script:
-    """
-    freebayes -f ${reference} --ploidy 1 ${bamFile} > ${bamFile.baseName}.vcf
-    """
-}
-
-process vcf_subset {
-    publishDir 'final_vcf'
-
-    input:
-    tuple val(sample), path(reference), path(vcf), val(start), val(end), path(snps)
-
-    output:
-    tuple val(sample), path("*identified.snps.txt"), path("*all23S.subset.txt")
-
-    script:
-    """
-    bcftools view -i 'QUAL>=30' ${vcf} -Oz -o ${vcf}.gz
-    bcftools index ${vcf}.gz
-    python3 $baseDir/23SsnpAnalysis.py ${vcf}.gz ${reference} ${start} ${end} ${snps}
     """
 }
 
@@ -451,7 +421,7 @@ process each_snp_summary {
 }
 
 process combine_snp_summary {
-    publishDir 'summary'
+    publishDir "${params.output}/summary"
 
     input:
     path(snp_files)
@@ -469,67 +439,95 @@ process combine_snp_summary {
     """
 }
 
-process amrfinder {
-    publishDir 'amrfinderplus'
+process combine_reports{
 
+    publishDir "${params.output}/sample_reports"
+    
     input:
-    tuple val(sample), path(fasta), val(qc)
+    tuple val(sample), path(kraken), path(fastp), path(coverage), path(bestRef), path(mrSnps)
 
     output:
-    path("*.out")
-
+    path("${sample}_report.out")
+    
     script:
     """
-    if [ "${qc}" == "PASS" ]; then
-        amrfinder -n ${fasta} -o ${fasta.baseName}.amr.out
-    else
-        touch ${fasta.baseName}.amr.out
-        echo "FAILED SAMPLE" >> ${fasta.baseName}.amr.out
-    fi
+    touch ${sample}_report.out
+    echo "Kraken Classfication\n" >> ${sample}_report.out
+    cat ${kraken} >> ${sample}_report.out
+    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.out
+    echo "Quality Filtering using Fastp\nSamples that have Qscore < 30 are marked as FAILED\n" >> ${sample}_report.out
+    cat ${fastp} >> ${sample}_report.out
+    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.out
+    echo "Coverage Filtering using Samtools Coverage\nSamples below 10x are marked as FAILED\n" >> ${sample}_report.out
+    cat ${coverage} >> ${sample}_report.out
+    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.out
+    echo "FASTani to select the best reference\n" >> ${sample}_report.out
+    cat ${bestRef} >> ${sample}_report.out
+    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.out
+    echo "Identification of Macrolide Resistant SNPs using Freebayes and bcftools" >> ${sample}_report.out
+    echo -e "Sample\tPos\tALT\tREF\tSNP" | cat - ${mrSnps} > temp && mv temp ${mrSnps}
+    cat ${mrSnps} | column -t >> ${sample}_report.out
+    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.out
     """
 }
 
-workflow {
+workflow setupWorkflow {
+    downloadKrakenDB()
+    downloadReferences()
+}
+ 
+workflow mainWorkflow {
 
-    Channel.fromFilePairs("${params.input_dir}/*_{1,2,R1,R2,r1,r2}.{fastq,fq,FASTQ,FQ,fastq.gz,fq.gz,FASTQ.GZ,FQ.GZ}")
-           .ifEmpty{ error "NO {reads}.fastq/fq files found in the specified directory: ${params.input_dir}"}
-           .set {paired_reads}   
+    if (!params.input) {
+        error "ERROR: Missing required input parameter. Please specify the input directory using '--input'."
+    }
+    if (!params.output) {
+        error "ERROR: Missing required output parameter. Please specify the output directory using '--output'."
+    }
 
-    // unzip reads if needed
+    if (!params.snpFile) {
+        snpFile = createBedFile()
+    } else {
+        snpFile = params.snpFile
+    }
+
+    Channel.fromFilePairs("${params.input}/*_{1,2,R1,R2,r1,r2}.{fastq,fq,FASTQ,FQ,fastq.gz,fq.gz,FASTQ.GZ,FQ.GZ}")
+           .ifEmpty{ error "NO {reads}.fastq/fq files found in the specified directory: ${params.input}"}
+           .set {paired_reads} 
+
     unzipped_reads = gunzip_reads(paired_reads)
-    kraken_input = unzipped_reads.combine(Channel.fromPath(kraken_db_path))
+    kraken_input = unzipped_reads.combine(Channel.fromPath(params.kraken_db))
 
-    // // Run Kraken and generate Kraken classification and report
-    kraken_out = kraken(kraken_input)
-    kraken_summary = kraken_out.kraken_summary
-              .map{ line -> line.collect {it.replaceAll(' ','|')}}
+    // Run Kraken and generate Kraken classification and report
+    kraken_run = kraken(kraken_input)
+    kraken_summary = kraken_run.kraken_summary
+                     .map{ line -> line.collect {it.replaceAll(' ','|')}}
+    
+    // Run fastp to filter reads based on Q-scores and assign QC value of PASS or FAIL
+    qual_check_out = fastp(kraken_run.kraken_out)
 
+    // References that were downloaded in the setup run
+    references = Channel.of(
+        ['GCF_000027345', "${projectDir}/${params.reference1}"],
+        ['GCF_001272835', "${projectDir}/${params.reference2}"]
+    )
 
-    // Run fastp to assign PASS or FAIL check to reads based on Q-scores
-    qual_check_out = fastp(unzipped_reads)
-
-    // References
-    references = Channel.fromPath("${params.reference_dir}/*.fna")
-        .ifEmpty{ error "NO {reference}.fna files found in the specified directory: ${params.reference_dir}"}
-        .map(file -> tuple(file.baseName.replaceAll(/.fna/,""), file))
-
-    // Create input for coverage check where PASS reads with go through coverage filter
     input = qual_check_out.fastp_out
                 .combine(references.first())
 
     // Run the coverage check
     cov_check = coverage_check(input)
-
-    // assembling the QC and Coverage threshold passed reads
-    genomes = assembly(cov_check.cov_out)
+    
+        // assembling the QC and Coverage threshold passed reads
+    assemblies = assembly(cov_check.cov_out)
 
     ref_type = Channel.of(
-        ["GCF_000027345.1_ASM2734v1_genomic", "type1"],
-        ["GCF_001272835.1_ASM127283v1_genomic", "type2"]
+        ["GCF_000027345", "type1"],
+        ["GCF_001272835", "type2"]
     ).combine(references, by:0)
-
+    
     // create tuple of genome combinations with the references
-    genomes
+    assemblies
         .combine(ref_type)
         .set {inputSet}
     
@@ -540,11 +538,40 @@ workflow {
     // getting the best reference for each isolate/sample 
     out = bestRef(grouped)
 
-    // Combined report for each sample 
-    combined = kraken_out.kraken_report
+    ref_type = ref_type.map {it[1..2]}
+    passed_samples = cov_check.cov_out
+                    .filter { tuple -> tuple[-1] == "PASS" }
+                    .combine(ref_type)
+                    .filter { tuple -> tuple[-2] == "type1"}
+    
+    minimapOut = minimap2(passed_samples)
+    samOut = samtools(minimapOut)
+    freebayesOut = freebayes(samOut)
+
+    inputVcf = Channel.of(["120057", "122961", snpFile.bed])
+    inputVcf = freebayesOut.combine(inputVcf)
+    
+    cleanedChannel = inputVcf.map { tuple ->
+        def path = tuple[5].get() // Assuming the DataflowVariable is the 6th element
+        tuple[0..4] + [path]      // Return the tuple with the path instead of the DataflowVariable
+    }
+
+    vcf_out = vcf_subset(cleanedChannel)
+    // amrfinder
+    amrfinder(assemblies)
+
+    ///// SUMMARIES
+
+    snpSumOut = each_snp_summary(vcf_out)
+    snpSumOut.map { it[1] }
+             .collect()
+             .set { snpSumOut1 }
+
+    combined = kraken_run.kraken_report
             .combine(qual_check_out.fastp_report, by:0)
             .combine(cov_check.cov_report, by:0)  
             .combine(out.bestRef_report, by:0)
+            .combine(snpSumOut, by:0)
 
     combine_reports(combined)
 
@@ -561,29 +588,17 @@ workflow {
 
     summary1 = summary1(sampleSummaries)
 
-    // Once the combined reports are generated, the passed samples are moved ahead for further processing
+    // summarising results from SNP analysis and combining with previous results to create one single run summary
 
-    ref_type = ref_type.map {it[1..2]}
-    passed_samples = cov_check.cov_out
-                    .filter { tuple -> tuple[-1] == "PASS" }
-                    .combine(ref_type)
-                    .filter { tuple -> tuple[-2] == "type1"}
-
-    minimapOut = minimap2(passed_samples)
-    samOut = samtools(minimapOut)
-    freebayesOut = freebayes(samOut)
-
-    inputVcf = Channel.of(["120057", "122961", params.snpsBed])
-    inputVcf = freebayesOut.combine(inputVcf)
-    vcf_out = vcf_subset(inputVcf)
-
-    // summarising results from SNP analysis
-    snpSumOut = each_snp_summary(vcf_out)
-                .map { it[1] }
-                .collect()
-    
-    combine_snp_summary(snpSumOut, summary1)
-
-    // amrfinder
-    amrfinder(genomes)
+    combine_snp_summary(snpSumOut1, summary1)
+}
+ 
+workflow {
+    if (params.download_db) {
+        println "Downloading Kraken database and Type 1 and Type 2 Reference..."
+        setupWorkflow()
+    } else {
+        println "Running the pipeline using downloaded databases and references"
+        mainWorkflow()
+    }
 }
