@@ -1,24 +1,18 @@
+#!/usr/bin/env nextflow
+
 nextflow.enable.dsl = 2
- 
-params.download_db = false
+
 params.input = ''
 params.output = ''
 params.snpFile = ''
-params.kraken_db = './krakendb/minikraken_8GB_202003'
-params.reference1 = '/references/GCF_000027345.1_ASM2734v1_genomic.fna'
-params.reference2 = '/references/GCF_001272835.1_ASM127283v1_genomic.fna'
 params.help = false
 
 ///// HELP MESSAGE /////
 
 if (params.help) {
         help = """
-              |Setup Run: Download minikraken database (https://genome-idx.s3.amazonaws.com/kraken/k2_standard_08gb_20240112.tar.gz) and 
-              |           M.pneumoniae M129 (type 1) and FH (type 2) reference files
-              |Command: nextflow run CAMPneu.nf --download_db
-              |
-              |Default Run: Run all the processes in pipeline using the downloaded database and references
-              |Command: nextflow run CAMPneu.nf --input <fastq_reads_dir> --output <output_dir>
+              |Usage: 
+              |CAMPneu.nf --input <fastq_reads_dir> --output <output_dir>
               |
               |Custom Run: Run all the processes in pipeline using the downloaded database and references with a user specified SNP bed file
               |Command: nextflow run CAMPneu.nf --input <fastq_reads_dir> --output <output_dir> --snpFile <snp_bed_file>
@@ -35,9 +29,10 @@ if (params.help) {
 }
 
 process downloadKrakenDB {
-    publishDir 'krakendb'
+    publishDir "${CONDA_PREFIX}/bin/data/krakendb/"
+
     output:
-    path('minikraken_8GB_202003')
+    path("minikraken_8GB_202003")
  
     script:
     """
@@ -47,17 +42,16 @@ process downloadKrakenDB {
     rm minikraken_8GB_202003.tgz
     """
 }
- 
-process downloadReferences {
-    publishDir 'references'
+
+process download_refs {
+    publishDir "${CONDA_PREFIX}/bin/data/References"
 
     output:
-    path('GCF_000027345.1_ASM2734v1_genomic.fna')
-    path('GCF_001272835.1_ASM127283v1_genomic.fna')
+    tuple path('GCF_000027345.1_ASM2734v1_genomic.fna'), path('GCF_001272835.1_ASM127283v1_genomic.fna')
  
     script:
     """
-    wget -O GCF_000027345.1_ASM2734v1_genomic.fna.gz ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/027/345/GCF_000027345.1_ASM2734v1/GCF_000027345.1_ASM2734v1_genomic.fna.gz
+    wget -O GCF_000027345.1_ASM2734v1_genomic.fna.gz ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/027/345/GCF_000027345.1_ASM2734v1/GCF_000027345.1_ASM2734v1_genomic.fna.gz 
     wget -O GCF_001272835.1_ASM127283v1_genomic.fna.gz ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/001/272/835/GCF_001272835.1_ASM127283v1/GCF_001272835.1_ASM127283v1_genomic.fna.gz
     gunzip GCF_000027345.1_ASM2734v1_genomic.fna.gz
     gunzip GCF_001272835.1_ASM127283v1_genomic.fna.gz
@@ -87,24 +81,26 @@ process gunzip_reads {
     tuple val(sampleID), path(reads)
 
     output:
-    tuple val(sampleID), path("${reads[0].baseName}_unzip.fastq"), path("${reads[1].baseName}_unzip.fastq")
+    tuple val(sampleID), path("${reads[0].simpleName}_unzip.fastq"), path("${reads[1].simpleName}_unzip.fastq")
 
     script:
     """
-    if [[${reads[0]} == *.gz]]; then
-        gunzip -c ${reads[0]} -> ${reads[0].baseName}_unzip.fastq
+    if [[ "${reads[0]}" == *.gz ]]; then
+        gunzip -c "${reads[0]}" > "${reads[0].simpleName}_unzip.fastq"
     else
-        mv ${reads[0]} ${reads[0].baseName}_unzip.fastq
+        mv ${reads[0]} ${reads[0].simpleName}_unzip.fastq
     fi
-    if [[${reads[1]} == *.gz]]; then
-        gunzip -c ${reads[1]} -> ${reads[1].baseName}_unzip.fastq
+    if [[ "${reads[1]}" == *.gz ]]; then
+        gunzip -c "${reads[1]}" > "${reads[1].simpleName}_unzip.fastq"
     else
-        mv ${reads[1]} ${reads[1].baseName}_unzip.fastq
+        mv ${reads[1]} ${reads[1].simpleName}_unzip.fastq
     fi  
     """
 }
  
 process kraken {
+
+
 
     publishDir "${params.output}/Kraken"
 
@@ -471,13 +467,35 @@ process combine_reports{
     """
 }
 
-workflow setupWorkflow {
-    downloadKrakenDB()
-    downloadReferences()
-}
- 
-workflow mainWorkflow {
 
+ 
+workflow {
+
+    ///// KRAKEN DB /////
+    // Check if minikraken database exists, if not, download to $CONDA_PREFIX
+    def kraken_db_dir = file("${CONDA_PREFIX}/bin/data/krakendb/minikraken_8GB_202003")
+    if (kraken_db_dir.exists()) {
+        println "Minikraken database exists, skipping download."
+        kraken_db = Channel.value(kraken_db_dir)
+    } else {
+        println "Minikraken database downloading now..."
+        kraken_db = downloadKrakenDB()        
+    }
+
+    ///// REFERENCE FILES - TYPE 1 AND TYPE 2 /////
+    def ref1 = file("${CONDA_PREFIX}/bin/data/References/GCF_000027345.1_ASM2734v1_genomic.fna")
+    def ref2 = file("${CONDA_PREFIX}/bin/data/References/GCF_001272835.1_ASM127283v1_genomic.fna")
+    if (ref1.exists() && ref2.exists()) {
+        println "Type1 and Type2 Reference files also exist, skipping download"
+        references = Channel.fromPath([ref1, ref2])
+        // references = tuple(ref1, ref2)
+        // references = Channel.of(references)
+    } else {
+        println "Reference files downloading now..."
+        references = download_refs()
+    }
+    
+    ///// UNZIP ZIPPED READS /////
     if (!params.input) {
         error "ERROR: Missing required input parameter. Please specify the input directory using '--input'."
     }
@@ -485,46 +503,44 @@ workflow mainWorkflow {
         error "ERROR: Missing required output parameter. Please specify the output directory using '--output'."
     }
 
+    Channel.fromFilePairs("${params.input}/*_{1,2,R1,R2,r1,r2}.{fastq,fq,FASTQ,FQ,fastq.gz,fq.gz,FASTQ.GZ,FQ.GZ}")
+           .ifEmpty{ error "NO {reads}.fastq/fq files found in the specified directory: ${params.input}"}
+           .set {paired_reads}
+    
+    unzipped_reads = gunzip_reads(paired_reads)
+
+    ///// CREATE SNP FILE IF NOT INPUT /////
     if (!params.snpFile) {
         snpFile = createBedFile()
     } else {
         snpFile = params.snpFile
     }
 
-    Channel.fromFilePairs("${params.input}/*_{1,2,R1,R2,r1,r2}.{fastq,fq,FASTQ,FQ,fastq.gz,fq.gz,FASTQ.GZ,FQ.GZ}")
-           .ifEmpty{ error "NO {reads}.fastq/fq files found in the specified directory: ${params.input}"}
-           .set {paired_reads} 
-
-    unzipped_reads = gunzip_reads(paired_reads)
-    kraken_input = unzipped_reads.combine(Channel.fromPath(params.kraken_db))
-
-    // Run Kraken and generate Kraken classification and report
+    // Run Kraken and generate Kraken classification and report 
+    kraken_input = unzipped_reads.combine(kraken_db)
     kraken_run = kraken(kraken_input)
     kraken_summary = kraken_run.kraken_summary
                      .map{ line -> line.collect {it.replaceAll(' ','|')}}
     
     // Run fastp to filter reads based on Q-scores and assign QC value of PASS or FAIL
     qual_check_out = fastp(kraken_run.kraken_out)
-
-    // References that were downloaded in the setup run
-    references = Channel.of(
-        ['GCF_000027345', "${projectDir}/${params.reference1}"],
-        ['GCF_001272835', "${projectDir}/${params.reference2}"]
-    )
-
-    input = qual_check_out.fastp_out
-                .combine(references.first())
+    references_ch = references.map { file ->
+        def id = file.getBaseName().split('\\.1')[0]  // Extract the identifier 
+        [id, file]  // Return a tuple of [id, file]
+    }
 
     // Run the coverage check
-    cov_check = coverage_check(input)
+    cov_input = qual_check_out.fastp_out
+                .combine(references_ch.first())
+    cov_check = coverage_check(cov_input)
     
-        // assembling the QC and Coverage threshold passed reads
+    // assembling the QC and Coverage threshold passed reads
     assemblies = assembly(cov_check.cov_out)
 
     ref_type = Channel.of(
         ["GCF_000027345", "type1"],
         ["GCF_001272835", "type2"]
-    ).combine(references, by:0)
+    ).combine(references_ch, by:0)
     
     // create tuple of genome combinations with the references
     assemblies
@@ -560,7 +576,7 @@ workflow mainWorkflow {
     // amrfinder
     amrfinder(assemblies)
 
-    ///// SUMMARIES
+    // SUMMARIES
 
     snpSumOut = each_snp_summary(vcf_out)
     snpSumOut.map { it[1] }
@@ -591,14 +607,4 @@ workflow mainWorkflow {
     // summarising results from SNP analysis and combining with previous results to create one single run summary
 
     combine_snp_summary(snpSumOut1, summary1)
-}
- 
-workflow {
-    if (params.download_db) {
-        println "Downloading Kraken database and Type 1 and Type 2 Reference..."
-        setupWorkflow()
-    } else {
-        println "Running the pipeline using downloaded databases and references"
-        mainWorkflow()
-    }
 }
