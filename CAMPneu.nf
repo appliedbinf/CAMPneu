@@ -14,9 +14,9 @@ if (params.help) {
               |Usage: 
               |CAMPneu.nf --input <fastq_reads_dir> --output <output_dir>
               |
-              |Custom Run: Run all the processes in pipeline using the downloaded database and references with a user specified SNP bed file
-              |Command: nextflow run CAMPneu.nf --input <fastq_reads_dir> --output <output_dir> --snpFile <snp_bed_file>
-              |         
+              |Optional run:
+              |CAMPneu.nf --input <fastq_reads_dir> --output <output_dir> --snpFile [path/to/snps.bed]
+              |       
               |Required arguments:     
               |  --input     Path to the Paired Fastq Reads directory  
               |  --output    Directory where process outputs are saved          
@@ -29,7 +29,8 @@ if (params.help) {
 }
 
 process downloadKrakenDB {
-    publishDir "${CONDA_PREFIX}/bin/data/krakendb/"
+    //publishDir "${CONDA_PREFIX}/bin/data/References"
+    publishDir "${HOME}/CAMPneu/db/krakendb"
 
     output:
     path("minikraken_8GB_202003")
@@ -44,8 +45,8 @@ process downloadKrakenDB {
 }
 
 process download_refs {
-    publishDir "${CONDA_PREFIX}/bin/data/References"
-
+    //publishDir "${CONDA_PREFIX}/bin/data/References"
+    publishDir "${HOME}/CAMPneu/db/References"
     output:
     tuple path('GCF_000027345.1_ASM2734v1_genomic.fna'), path('GCF_001272835.1_ASM127283v1_genomic.fna')
  
@@ -99,8 +100,6 @@ process gunzip_reads {
 }
  
 process kraken {
-
-
 
     publishDir "${params.output}/Kraken"
 
@@ -203,6 +202,8 @@ process coverage_check {
 }
 
 process assembly {
+
+    cpus 4
 
     publishDir "${params.output}/assemblies"
 
@@ -473,7 +474,8 @@ workflow {
 
     ///// KRAKEN DB /////
     // Check if minikraken database exists, if not, download to $CONDA_PREFIX
-    def kraken_db_dir = file("${CONDA_PREFIX}/bin/data/krakendb/minikraken_8GB_202003")
+    //def kraken_db_dir = file("${CONDA_PREFIX}/bin/data/krakendb/minikraken_8GB_202003")
+    def kraken_db_dir = file("${HOME}/CAMPneu/db/krakendb/minikraken_8GB_202003")
     if (kraken_db_dir.exists()) {
         println "Minikraken database exists, skipping download."
         kraken_db = Channel.value(kraken_db_dir)
@@ -483,8 +485,10 @@ workflow {
     }
 
     ///// REFERENCE FILES - TYPE 1 AND TYPE 2 /////
-    def ref1 = file("${CONDA_PREFIX}/bin/data/References/GCF_000027345.1_ASM2734v1_genomic.fna")
-    def ref2 = file("${CONDA_PREFIX}/bin/data/References/GCF_001272835.1_ASM127283v1_genomic.fna")
+    // def ref1 = file("${CONDA_PREFIX}/bin/data/References/GCF_000027345.1_ASM2734v1_genomic.fna")
+    // def ref2 = file("${CONDA_PREFIX}/bin/data/References/GCF_001272835.1_ASM127283v1_genomic.fna")
+    def ref1 = file("${HOME}/CAMPneu/db/References/GCF_000027345.1_ASM2734v1_genomic.fna")
+    def ref2 = file("${HOME}/CAMPneu/db/References/GCF_001272835.1_ASM127283v1_genomic.fna")    
     if (ref1.exists() && ref2.exists()) {
         println "Type1 and Type2 Reference files also exist, skipping download"
         references = Channel.fromPath([ref1, ref2])
@@ -524,6 +528,7 @@ workflow {
     
     // Run fastp to filter reads based on Q-scores and assign QC value of PASS or FAIL
     qual_check_out = fastp(kraken_run.kraken_out)
+
     references_ch = references.map { file ->
         def id = file.getBaseName().split('\\.1')[0]  // Extract the identifier 
         [id, file]  // Return a tuple of [id, file]
@@ -532,6 +537,7 @@ workflow {
     // Run the coverage check
     cov_input = qual_check_out.fastp_out
                 .combine(references_ch.first())
+
     cov_check = coverage_check(cov_input)
     
     // assembling the QC and Coverage threshold passed reads
