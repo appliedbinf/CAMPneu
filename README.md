@@ -23,11 +23,6 @@ Once NextFlow and Conda are activated, the "CAMPneu' conda package will be creat
 ```
 nextflow run CAMPneu.nf --help
 
-Setup Run: Download minikraken database (https://genome-idx.s3.amazonaws.com/kraken/k2_standard_08gb_20240112.tar.gz) and 
-           M.pneumoniae M129 (type 1) and FH (type 2) reference files
-Command: nextflow run CAMPneu.nf --download_db
-
-Default Run: Run all the processes in pipeline using the downloaded database and references
 Command: nextflow run CAMPneu.nf --input <fastq_reads_dir> --output <output_dir>
 
 Custom Run: Run all the processes in pipeline using the downloaded database and references with a user specified SNP bed file
