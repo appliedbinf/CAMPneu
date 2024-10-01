@@ -29,7 +29,9 @@ Required arguments:
 ```
   --input     Path to the Paired Fastq Reads directory  
   --output    Directory where process outputs are saved          
-Optional arguments:  
+```
+Optional arguments:
+``` 
   --snpFile   Path to the custom SNP bed file
   --help      Print this message and exit
 ```
