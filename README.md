@@ -5,28 +5,24 @@ CAMPneu is a Nextflow bioinformatic pipeline that is reproducible, scalable, and
 While extensible, early drafts of CAMPneu are targeted for Illumina paired-end sequence data with the objectives of 
 (1) determining if the specimen belongs to the M. pneumoniae species
 (2) classification of the subtype (type1 or type2) of M. pneumoniae
-(3) identification of known SNPs conferring macrolide-resistance and any other AMR-related genes present within the sample.
+(3) identification of known SNPs conferring macrolide-resistance present within the sample.
 
-### Command to run the nextflow script:
-
-CAMPneu has been set up to explicitly run on rosalind/scicomp resources for which prerequites are required to be done. Prior to running the script, the nextflow and conda/mamba modules need to be loaded.
+### How to Run
 
 ```
-module load nextflow
-module load miniconda3/20230728 
-mamba install -n campneu -c bioconda -c conda-forge -c appliedbinf campneu 
-mamba activate campneu 
+conda install -n campneu -c bioconda -c conda-forge -c appliedbinf campneu 
+conda activate campneu 
 ```
 
-Once NextFlow and Conda are activated, the "CAMPneu' conda package will be created and activated from within the nextflow processes. Then the script can be run.
-
+Help message
 ```
-nextflow run CAMPneu.nf --help
+CAMPneu.nf --help
+```
 
-Command: nextflow run CAMPneu.nf --input <fastq_reads_dir> --output <output_dir>
-
-Custom Run: Run all the processes in pipeline using the downloaded database and references with a user specified SNP bed file
-Command: nextflow run CAMPneu.nf --input <fastq_reads_dir> --output <output_dir> --snpFile <snp_bed_file>
+Run command
+```
+CAMPneu.nf --input <fastq_reads_dir> --output <output_dir>
+```
          
 Required arguments:     
   --input     Path to the Paired Fastq Reads directory  
@@ -36,10 +32,6 @@ Optional arguments:
   --help      Print this message and exit
 ```
 
-### Conda installation of all packages:
-```
-conda install -c bioconda -c conda-forge appliedbinf::campneu  
-```
 
 ### NextFlow script step-by-step workflow:	
 1. **Kraken2 Taxonomic Classification:** Classifies input sequences based on a pre-built database.
