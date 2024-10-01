@@ -31,8 +31,6 @@ Required arguments:
 Optional arguments:  
   --snpFile   Path to the custom SNP bed file
   --help      Print this message and exit
-```
-
 
 ### NextFlow script step-by-step workflow:	
 1. **Kraken2 Taxonomic Classification:** Classifies input sequences based on a pre-built database.
