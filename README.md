@@ -25,12 +25,14 @@ CAMPneu.nf --help
 CAMPneu.nf --input <fastq_reads_dir> --output <output_dir>
 ```
          
-Required arguments:     
+Required arguments:   
+```
   --input     Path to the Paired Fastq Reads directory  
   --output    Directory where process outputs are saved          
 Optional arguments:  
   --snpFile   Path to the custom SNP bed file
   --help      Print this message and exit
+```
 
 ### NextFlow script step-by-step workflow:	
 1. **Kraken2 Taxonomic Classification:** Classifies input sequences based on a pre-built database.
