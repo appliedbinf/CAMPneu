@@ -9,17 +9,18 @@ While extensible, early drafts of CAMPneu are targeted for Illumina paired-end s
 
 ### How to Run
 
+1. Installation of the conda package
 ```
 conda install -n campneu -c bioconda -c conda-forge -c appliedbinf campneu 
 conda activate campneu 
 ```
 
-Help message
+2. Help message
 ```
 CAMPneu.nf --help
 ```
 
-Run command
+3. Run command
 ```
 CAMPneu.nf --input <fastq_reads_dir> --output <output_dir>
 ```
