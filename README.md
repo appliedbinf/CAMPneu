@@ -16,6 +16,7 @@ CAMPneu requires systems to have the following installed/available:
 CAMPneu is designed to work with both Conda and Singularity container, offering flexibility and reproducibility in computational environments.
 
 **CONDA:**
+
 Conda excels at managing dependencies and creating isolated environments. Conda is also easy to use across different operating systems and is ideal for setting up reproducible environments on local machines.
 
 1. Installation using Conda
@@ -35,13 +36,28 @@ CAMPneu.nf --help
 ```
 
 **SINGULARITY:**
+
 Singularity ensures consistency and portability across systems and is tailored for high-performance computing (HPC) environments offering enhanced efficiency.
 
-The conda installed version of CAMPneu can also be run using singularity but if the user does not have access to conda, they can clone the git repository using the following command:
+The conda installed version of CAMPneu can also be run using singularity but if the user does not have access to conda, they can clone the git repository (nextflow is required for this approach).
+
+1. Git installation
 ```
-git clone 
+git clone https://github.com/appliedbinf/CAMPneu.git
 ```
-         
+
+2. Run the program from the project repository:
+```
+nextflow run CAMPneu.nf --input <fastq_reads_dir> --output <output_dir> -profile singularity
+```
+
+3. Help message
+```
+nextflow run CAMPneu.nf --help
+```
+
+**Script Input Requirements**
+
 Required arguments:   
 ```
   --input     Path to the Paired Fastq Reads directory  
@@ -92,4 +108,3 @@ The scripts generates output directories for each process which have the files g
 #### Summary
 1. Sample_reports: Reports for each sample summarizing QC and type information
 2. Summary: Report for the entire run w=summarizing which samples have Passed or failed the QC and the SNPs identified for macrolide resistance
-
