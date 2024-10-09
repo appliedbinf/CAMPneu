@@ -2,7 +2,7 @@
 
 nextflow.enable.dsl = 2
 
-params.input = ''
+params.input = '/scicomp/groups-pure/OID/NCIRD/DBD/RDB/PRS/PRS_ABiL_URDO/mycoplasma/CAMPneu/Fastq'
 params.output = ''
 params.snpFile = ''
 params.help = false
@@ -29,8 +29,8 @@ if (params.help) {
 }
 
 process downloadKrakenDB {
-    //publishDir "${CONDA_PREFIX}/bin/data/References"
-    publishDir "${HOME}/CAMPneu/db/krakendb"
+    
+    publishDir "${HOME}/CAMPneu/db/krakendb", mode: 'copy'
 
     output:
     path("minikraken_8GB_202003")
@@ -45,8 +45,9 @@ process downloadKrakenDB {
 }
 
 process download_refs {
-    //publishDir "${CONDA_PREFIX}/bin/data/References"
-    publishDir "${HOME}/CAMPneu/db/References"
+
+    publishDir "${HOME}/CAMPneu/db/References", mode: 'copy'
+
     output:
     tuple path('GCF_000027345.1_ASM2734v1_genomic.fna'), path('GCF_001272835.1_ASM127283v1_genomic.fna')
  
@@ -101,7 +102,7 @@ process gunzip_reads {
  
 process kraken {
 
-    publishDir "${params.output}/Kraken"
+    publishDir "${params.output}/Kraken", mode: 'copy'
 
     input:
     tuple val(sampleID), path(read1), path(read2), path(db)   
@@ -109,7 +110,7 @@ process kraken {
     output:
     tuple val(sampleID), path(read1), path(read2), env(qc), emit: kraken_out
     tuple val(sampleID), path("${sampleID}_Kraken.tsv"), emit: kraken_report
-    tuple val(sampleID), env(percent), env(sp), emit: kraken_summary
+    tuple val(sampleID), env(percent), env(sp), env(qc), emit: kraken_summary
 
 
     script:
@@ -124,20 +125,23 @@ process kraken {
     cat header.tsv ${sampleID}.tsv > ${sampleID}_Kraken_1.tsv
     sp=\$(grep -w 'Species' ${sampleID}_Kraken_1.tsv | cut -f3 | sed 's/^[ \t]*//' | sed 's/ /_/g')
     percent=\$(grep -w 'Species' ${sampleID}_Kraken_1.tsv | cut -f1 | sed 's/^[ \t]*//')
+
+    mp_percent=\$(grep 'Mycoplasmoides pneumoniae' ${sampleID}_Kraken_1.tsv | cut -f1 | sed 's/^[ \t]*//')
+
     qc="FAIL"
-    if [ \$(echo "\${percent} >= 90" | bc) -eq 1 ]; then
+    if [ \$(echo "\${mp_percent} >= 90" | bc) -eq 1 ]; then
         qc="PASS"
         column -t ${sampleID}_Kraken_1.tsv > ${sampleID}_Kraken.tsv
     else
         touch ${sampleID}_Kraken.tsv
-        echo "Sample failed classfication check." > ${sampleID}_Kraken.tsv       
+        echo "Sample failed. " > ${sampleID}_Kraken.tsv       
     fi
     """
 }
 
 process fastp {
 
-    publishDir "${params.output}/fastp"
+    publishDir "${params.output}/fastp", mode: 'copy'
 
     input:
     tuple val(sampleID), path(read1), path(read2), val(qc)
@@ -145,32 +149,40 @@ process fastp {
     output:
     tuple val(sampleID), path("${read1.baseName}_qc.fq"), path("${read2.baseName}_qc.fq"), env(fastp_qc), emit: fastp_out
     tuple val(sampleID), path("${read1.baseName}_fastpQC.tsv"), emit: fastp_report
-    tuple val(sampleID), env(rate), env(fastp_qc), emit: fastp_summary
+    tuple val(sampleID), env(rate), env(avg_qscore), env(fastp_qc), emit: fastp_summary
 
 
     shell:
     """
-    if [ "${qc}" == "PASS" ]; then
-        fastp \
-        --in1 ${read1} \
-        --in2 ${read2} \
-        --out1 ${read1.baseName}_qc.fq \
-        --out2 ${read2.baseName}_qc.fq \
-        --average_qual 30 \
-        --json ${read1.baseName}.json
+    fastp \
+    --in1 ${read1} \
+    --in2 ${read2} \
+    --out1 ${read1.baseName}_qc.fq \
+    --out2 ${read2.baseName}_qc.fq \
+    --average_qual 30 \
+    --json ${read1.baseName}.json
 
-        fastp_qc=\$(if [ "\$(jq '.summary.before_filtering.q30_bases > 0' ${read1.baseName}.json)" = true ]; then echo "PASS"; else echo "FAIL"; fi)
-        jq -r '.summary | [.before_filtering.total_reads, .after_filtering.total_reads, .before_filtering.q30_rate] | @csv' ${read1.baseName}.json | awk -F ',' '{print \$1 "\\t" \$2 "\\t" \$3}' > ${read1.baseName}.tsv
-        echo -e "Total_reads_before_filtering\tTotal_reads_after_filtering\tQ30_rate" | cat - ${read1.baseName}.tsv > temp &&  mv temp ${read1.baseName}.tsv
-        rate=\$(cut -f 3 ${read1.baseName}.tsv | grep '^[0-9].*')
+    fastp_qc=\$(if [ "\$(jq '.summary.after_filtering.q30_bases > 0' ${read1.baseName}.json)" = true ]; then echo "PASS"; else echo "FAIL"; fi)
+    jq -r '.summary | [.before_filtering.total_reads, .after_filtering.total_reads, .after_filtering.q30_rate] | @csv' ${read1.baseName}.json | awk -F ',' '{print \$1 "\\t" \$2 "\\t" \$3}' > ${read1.baseName}.tsv
+    rate=\$(cut -f 3 ${read1.baseName}.tsv | grep '^[0-9].*')
+
+    if [ "${qc}" == "PASS" ] && [ "\${fastp_qc}" == PASS ]; then
+        avg_q1=\$(jq '(.read1_before_filtering.quality_curves.mean | add / length )' ${read1.baseName}.json)
+        avg_q2=\$(jq '(.read2_before_filtering.quality_curves.mean | add / length )' ${read1.baseName}.json)
+        avg_qscore=\$(awk "BEGIN {print (\$avg_q1 + \$avg_q2)/2}")
+        awk -v avg_qscore=\$avg_qscore '{print \$0 "\\t" avg_qscore}' ${read1.baseName}.tsv > temp && mv temp ${read1.baseName}.tsv
+        echo -e "Total_reads_before_filtering\tTotal_reads_after_filtering\tQ30_rate\tAvg_QScore" | cat - ${read1.baseName}.tsv > temp && mv temp ${read1.baseName}.tsv
         column -t ${read1.baseName}.tsv > ${read1.baseName}_fastpQC.tsv
+    else
+        truncate -s 0 ${read1.baseName}_fastpQC.tsv
+        echo "sample failed quality check" > ${read1.baseName}_fastpQC.tsv
     fi
     """
 }
 
 process coverage_check {
 
-    publishDir "${params.output}/Coverage_check"
+    publishDir "${params.output}/Coverage_check", mode: 'copy'
 
     input:
     tuple val(sampleID), path(qc_read1), path(qc_read2), val(qc), val(ref), path(reference)
@@ -183,7 +195,7 @@ process coverage_check {
     script:
     """
     if [ "${qc}" == "FAIL" ]; then
-        echo "Sample failed coverage check" > ${sampleID}.cov.txt
+        echo "Sample failed quality check" > ${sampleID}.cov.tsv
         coverage="FAIL"
         percent=0
         qc="FAIL"
@@ -203,9 +215,7 @@ process coverage_check {
 
 process assembly {
 
-    cpus 4
-
-    publishDir "${params.output}/assemblies"
+    publishDir "${params.output}/assemblies", mode: 'copy'
 
     input:
     tuple val(sampleID), path(read1), path(read2), val(qc)
@@ -228,7 +238,7 @@ process assembly {
 
 process fastANI{
 
-    publishDir "${params.output}/fastANI"
+    publishDir "${params.output}/fastANI", mode: 'copy'
 
     input:
     tuple val(sample), path(assembly), val(qc), val(ref_label), val(type), path(reference)
@@ -253,7 +263,7 @@ process fastANI{
 
 process bestRef {
 
-    publishDir "${params.output}/bestReference"
+    publishDir "${params.output}/bestReference", mode: 'copy'
 
     input:
     tuple val(sample), path(ani_res), val(ref_label), path(reference), val(type), val(qc)
@@ -261,7 +271,7 @@ process bestRef {
     output:
     tuple val(sample), env(ref), env(type_new), env(qc_new), emit: bestRef_out
     tuple val(sample), path("${sample}_bestRef.tsv"), emit:bestRef_report
-    tuple val(sample), env(type_new), emit: bestRef_summary 
+    tuple val(sample), env(type_new), env(ani), emit: bestRef_summary 
 
     script:
     """
@@ -270,6 +280,7 @@ process bestRef {
         sort -n -k 3 ${sample}_allRef.txt | tail -n 1 > ${sample}_bestRef.txt
         ref=\$(less ${sample}_bestRef.txt | cut -f2 | sed 's/.fna//')
         type_new=\$(less ${sample}_bestRef.txt | cut -f4 | cut -d' ' -f2)
+        ani=\$(less ${sample}_bestRef.txt | cut -f3 | cut -d' ' -f2)
         echo -e "sampleID\tReference\tANI_value\ttype" | cat - ${sample}_bestRef.txt | column -t > temp &&  mv temp  ${sample}_bestRef.tsv
         qc_new="PASS"
 
@@ -285,7 +296,7 @@ process bestRef {
 
 process minimap2 {
 
-    publishDir "${params.output}/minimap2"
+    publishDir "${params.output}/minimap2", mode: 'copy'
 
     input:
     tuple val(sample), path(read1), path(read2), val(qc), val(type), path(reference)
@@ -301,7 +312,7 @@ process minimap2 {
 
 process samtools {
 
-    publishDir "${params.output}/samtools"
+    publishDir "${params.output}/samtools", mode: 'copy'
 
     input:
     tuple val(sample), path(reference), path(minimapOut)
@@ -319,7 +330,7 @@ process samtools {
 
 process freebayes {
 
-    publishDir "${params.output}/freebayes"
+    publishDir "${params.output}/freebayes", mode: 'copy'
 
     input:
     tuple val(sample), path(reference), path(bamFile)
@@ -334,7 +345,7 @@ process freebayes {
 }
 
 process vcf_subset {
-    publishDir "${params.output}/final_vcf"
+    publishDir "${params.output}/final_vcf", mode: 'copy'
 
     input:
     tuple val(sample), path(reference), path(vcf), val(start), val(end), path(snps)
@@ -351,7 +362,7 @@ process vcf_subset {
 }
 
 process amrfinder {
-    publishDir "${params.output}/amrfinderplus"
+    publishDir "${params.output}/amrfinderplus", mode: 'copy'
 
     input:
     tuple val(sample), path(fasta), val(qc)
@@ -381,7 +392,7 @@ process summary1 {
     path("final_summary.txt")
 
     script:
-    def header = "SampleID\tKraken_Percent\tKraken_Class\tFastp_Score_Rate\tCoverage_X\tType\tQC"
+    def header = "SampleID\tKraken_Percent\tKraken_Class\tFastp_Score_Rate\tAverage_QC\tCoverage_X\tQC\tType\tANI"
     def row = sampleSummaries.join("\n")
     """
     touch final_summary_1.txt
@@ -418,7 +429,7 @@ process each_snp_summary {
 }
 
 process combine_snp_summary {
-    publishDir "${params.output}/summary"
+    publishDir "${params.output}/summary", mode: 'copy'
 
     input:
     path(snp_files)
@@ -438,7 +449,7 @@ process combine_snp_summary {
 
 process combine_reports{
 
-    publishDir "${params.output}/sample_reports"
+    publishDir "${params.output}/sample_reports", mode: 'copy'
     
     input:
     tuple val(sample), path(kraken), path(fastp), path(coverage), path(bestRef), path(mrSnps)
@@ -525,21 +536,25 @@ workflow {
     kraken_run = kraken(kraken_input)
     kraken_summary = kraken_run.kraken_summary
                      .map{ line -> line.collect {it.replaceAll(' ','|')}}
-    
-    // Run fastp to filter reads based on Q-scores and assign QC value of PASS or FAIL
-    qual_check_out = fastp(kraken_run.kraken_out)
 
+    // Run fastp to filter reads based on Q-scores and assign QC value of PASS or FAIL
+    fastp_run = fastp(kraken_run.kraken_out)
+    
     references_ch = references.map { file ->
         def id = file.getBaseName().split('\\.1')[0]  // Extract the identifier 
         [id, file]  // Return a tuple of [id, file]
     }
 
     // Run the coverage check
-    cov_input = qual_check_out.fastp_out
+    cov_input = fastp_run.fastp_out
                 .combine(references_ch.first())
 
     cov_check = coverage_check(cov_input)
     
+    // kraken_run.kraken_summary.view()
+    // fastp_run.fastp_summary.view()
+    // cov_check.cov_summary.view()
+
     // assembling the QC and Coverage threshold passed reads
     assemblies = assembly(cov_check.cov_out)
 
@@ -556,7 +571,7 @@ workflow {
     // getting results of fastANI for all samples compared to both references and grouping based on the samples
     results = fastANI(inputSet)
     grouped = results.fastANI_out.groupTuple()
-
+    
     // getting the best reference for each isolate/sample 
     out = bestRef(grouped)
 
@@ -577,12 +592,12 @@ workflow {
         def path = tuple[5].get() // Assuming the DataflowVariable is the 6th element
         tuple[0..4] + [path]      // Return the tuple with the path instead of the DataflowVariable
     }
-
+    
     vcf_out = vcf_subset(cleanedChannel)
     // amrfinder
     amrfinder(assemblies)
 
-    // SUMMARIES
+    // // SUMMARIES
 
     snpSumOut = each_snp_summary(vcf_out)
     snpSumOut.map { it[1] }
@@ -590,24 +605,24 @@ workflow {
              .set { snpSumOut1 }
 
     combined = kraken_run.kraken_report
-            .combine(qual_check_out.fastp_report, by:0)
+            .combine(fastp_run.fastp_report, by:0)
             .combine(cov_check.cov_report, by:0)  
             .combine(out.bestRef_report, by:0)
             .combine(snpSumOut, by:0)
 
     combine_reports(combined)
 
-    // summary
-    //summary_values = [sampleID ,kraken_percent, kraken_class, fastp_score_rate, coverage_x, cov_qc, type]
+    // // summary
+    // //summary_values = [sampleID ,kraken_percent, kraken_class, fastp_score_rate, avgQscore, coverage_x, cov_qc, type, ani]
     summary_values = kraken_summary
-                    .combine(qual_check_out.fastp_summary, by:0)
-                    .map {it[0..3]}
+                    .combine(fastp_run.fastp_summary, by:0)
+                    .map {it[0..2] + it[4..5]}
                     .combine(cov_check.cov_summary, by:0)
-                    .map {it[0..5]}
+                    .map {it[0..6]}
                     .combine(out.bestRef_summary, by:0)
                     .collect{ summary -> summary.join('\t')}
                     .set { sampleSummaries }
-
+    
     summary1 = summary1(sampleSummaries)
 
     // summarising results from SNP analysis and combining with previous results to create one single run summary
