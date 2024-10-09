@@ -3,9 +3,9 @@
 
 CAMPneu is a Nextflow bioinformatic pipeline that is reproducible, scalable, and suitable for a wide range of computation environments. 
 While extensible, early drafts of CAMPneu are targeted for Illumina paired-end sequence data with the objectives of 
-1. determining if the specimen belongs to the M. pneumoniae species
-2. classification of the subtype (type1 or type2) of M. pneumoniae
-3. identification of known SNPs conferring macrolide-resistance present within the sample.
+1. Determining if the specimen belongs to the M. pneumoniae species
+2. Classification of the subtype (type1 or type2) of M. pneumoniae
+3. Identification of known SNPs conferring macrolide-resistance present within the sample
 
 ### How to Run
 
