@@ -7,22 +7,39 @@ While extensible, early drafts of CAMPneu are targeted for Illumina paired-end s
 2. Classification of the subtype (type1 or type2) of M. pneumoniae
 3. Identification of known SNPs conferring macrolide-resistance present within the sample
 
-### How to Run
+**System Requirements:**
+CAMPneu requires systems to have the following installed/available:
+1. Conda
+2. Singularity
+3. Nextflow (to be used with the singularity profile)
 
-1. Installation of the conda package
+CAMPneu is designed to work with both Conda and Singularity container, offering flexibility and reproducibility in computational environments.
+
+**CONDA:**
+Conda excels at managing dependencies and creating isolated environments. Conda is also easy to use across different operating systems and is ideal for setting up reproducible environments on local machines.
+
+1. Installation using Conda
 ```
 conda install -n campneu -c bioconda -c conda-forge -c appliedbinf campneu 
 conda activate campneu 
 ```
 
-2. Help message
+2. Run command
+```
+CAMPneu.nf --input <fastq_reads_dir> --output <output_dir> -profile conda
+```
+
+3. Help message
 ```
 CAMPneu.nf --help
 ```
 
-3. Run command
+**SINGULARITY:**
+Singularity ensures consistency and portability across systems and is tailored for high-performance computing (HPC) environments offering enhanced efficiency.
+
+The conda installed version of CAMPneu can also be run using singularity but if the user does not have access to conda, they can clone the git repository using the following command:
 ```
-CAMPneu.nf --input <fastq_reads_dir> --output <output_dir>
+git clone 
 ```
          
 Required arguments:   
