@@ -92,9 +92,6 @@ The pipeline sets specific thresholds for input paired reads/samples. Any reads 
 1. Illumina paired-end sequences
 2. 23SsnpAnalysis.py: Python script for VCF manipulation and analysis 
 
-### Additional scripts:
-**23SsnpAnalysis.py**: This scripts takes the output VCF files generated in the freebayes process and filters it to include snps in the 23S ribosomal RNA in the reference genomes. The scripts requires the co-ordinates of the ribosomal RNA region to subset the VCF file. The script also looks for a set of snps that are provided in a bed file. 
-
 ### Outputs:
 The scripts generates output directories for each process which have the files generated in the process
 
