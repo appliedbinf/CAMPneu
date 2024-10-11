@@ -2,7 +2,7 @@
 
 nextflow.enable.dsl = 2
 
-params.input = ''
+params.input = '/scicomp/groups-pure/OID/NCIRD/DBD/RDB/PRS/PRS_ABiL_URDO/mycoplasma/CAMPneu/Fastq'
 params.output = ''
 params.snpFile = ''
 params.help = false
@@ -30,7 +30,8 @@ if (params.help) {
 
 process downloadKrakenDB {
     
-    publishDir "${HOME}/CAMPneu/db/krakendb", mode: 'copy'
+    //publishDir "${HOME}/CAMPneu/db/krakendb", mode: 'copy'
+    publishDir "${params.kraken_db_dir}", mode: 'copy'
 
     output:
     path("minikraken_8GB_202003")
@@ -46,7 +47,8 @@ process downloadKrakenDB {
 
 process download_refs {
 
-    publishDir "${HOME}/CAMPneu/db/References", mode: 'copy'
+    //publishDir "${HOME}/CAMPneu/db/References", mode: 'copy'
+    publishDir "${params.reference_dir}", mode: 'copy'
 
     output:
     tuple path('GCF_000027345.1_ASM2734v1_genomic.fna'), path('GCF_001272835.1_ASM127283v1_genomic.fna')
@@ -509,7 +511,7 @@ workflow {
 
     ///// KRAKEN DB /////
     // Check if minikraken database exists, if not, download to $CONDA_PREFIX
-    def kraken_db_dir = file("${HOME}/CAMPneu/db/krakendb/minikraken_8GB_202003")
+    def kraken_db_dir = file("${params.kraken_db_dir}/minikraken_8GB_202003")
     if (kraken_db_dir.exists()) {
         println "Minikraken database exists, skipping download."
         kraken_db = Channel.value(kraken_db_dir)
@@ -519,8 +521,8 @@ workflow {
     }
 
     ///// REFERENCE FILES - TYPE 1 AND TYPE 2 /////
-    def ref1 = file("${HOME}/CAMPneu/db/References/GCF_000027345.1_ASM2734v1_genomic.fna")
-    def ref2 = file("${HOME}/CAMPneu/db/References/GCF_001272835.1_ASM127283v1_genomic.fna")    
+    def ref1 = file("${params.reference_dir}/GCF_000027345.1_ASM2734v1_genomic.fna")
+    def ref2 = file("${params.reference_dir}/GCF_001272835.1_ASM127283v1_genomic.fna")    
     if (ref1.exists() && ref2.exists()) {
         println "Type1 and Type2 Reference files also exist, skipping download"
         references = Channel.fromPath([ref1, ref2])
