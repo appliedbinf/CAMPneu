@@ -2,7 +2,7 @@
 
 nextflow.enable.dsl = 2
 
-params.input = '/scicomp/groups-pure/OID/NCIRD/DBD/RDB/PRS/PRS_ABiL_URDO/mycoplasma/CAMPneu/Fastq'
+params.input = ''
 params.output = ''
 params.snpFile = ''
 params.help = false
