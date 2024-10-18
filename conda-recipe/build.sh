@@ -4,6 +4,6 @@
  
 mkdir -p $PREFIX/bin/
  
-cp $RECIPE_DIR/../CAMPneu.nf $RECIPE_DIR/../23SsnpAnalysis.py  $RECIPE_DIR/../environment.yml  $RECIPE_DIR/../nextflow.config $PREFIX/bin/
+cp $RECIPE_DIR/../CAMPneu.nf $RECIPE_DIR/../nextflow.config $PREFIX/bin/
 
-chmod +x $PREFIX/bin/CAMPneu.nf $PREFIX/bin/23SsnpAnalysis.py $PREFIX/bin/environment.yml $PREFIX/bin/nextflow.config
+chmod +x $PREFIX/bin/CAMPneu.nf $PREFIX/bin/nextflow.config
