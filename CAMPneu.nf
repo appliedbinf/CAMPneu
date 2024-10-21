@@ -104,7 +104,7 @@ process gunzip_reads {
  
 process kraken {
 
-    publishDir "${params.output}/Kraken", mode: 'copy'
+    publishDir "${params.output}/Kraken", mode: 'copy', pattern: '*.tsv'
 
     input:
     tuple val(sampleID), path(read1), path(read2), path(db)   
@@ -143,7 +143,8 @@ process kraken {
 }
 
 process fastp {
-
+    publishDir "${params.output}/qc_reads", mode: 'copy', pattern: '*.fq'
+    
     input:
     tuple val(sampleID), path(read1), path(read2), val(qc)
 
@@ -163,7 +164,7 @@ process fastp {
 }
 
 process fastp_jq {
-    publishDir "${params.output}/fastp", mode: 'copy'
+    publishDir "${params.output}/fastp", mode: 'copy', pattern: '*.tsv'
 
     input:
     tuple val(sampleID), path(read1), path(read2), path(json), val(qc)
@@ -196,7 +197,7 @@ process fastp_jq {
 
 process coverage_check {
 
-    publishDir "${params.output}/Coverage_check", mode: 'copy'
+    publishDir "${params.output}/Coverage_check", mode: 'copy', pattern: '*.tsv'
 
     input:
     tuple val(sampleID), path(qc_read1), path(qc_read2), val(qc), val(ref), path(reference)
@@ -229,15 +230,14 @@ process coverage_check {
 
 process assembly {
 
-    publishDir "${params.output}/assemblies", mode: 'copy'
+    publishDir "${params.output}/assemblies", mode: 'copy', pattern: '*.fasta'
 
     input:
     tuple val(sampleID), path(read1), path(read2), val(qc)
 
     output:
-    tuple val(sampleID), path("${sampleID}.fasta"), emit: genomes 
+    tuple val(sampleID), path("${sampleID}.fasta"), env(qc_new), emit: genomes 
     tuple val(sampleID), path(read1), path(read2), env(qc_new), emit: assembly_out 
-    env(qc_new), emit: status
 
     script:
     """
@@ -262,7 +262,7 @@ process assembly {
 
 process fastANI{
 
-    publishDir "${params.output}/fastANI", mode: 'copy'
+    publishDir "${params.output}/fastANI", mode: 'copy', pattern: '*.out'
 
     input:
     tuple val(sample), path(assembly), val(qc), val(ref_label), val(type), path(reference)
@@ -287,7 +287,7 @@ process fastANI{
 
 process bestRef {
 
-    publishDir "${params.output}/bestReference", mode: 'copy'
+    publishDir "${params.output}/bestReference", mode: 'copy', pattern: '*.tsv'
 
     input:
     tuple val(sample), path(ani_res), val(ref_label), path(reference), val(type), val(qc)
@@ -322,7 +322,7 @@ process bestRef {
 
 process minimap2 {
 
-    publishDir "${params.output}/minimap2", mode: 'copy'
+    publishDir "${params.output}/minimap2", mode: 'copy', pattern: '*.sam'
 
     input:
     tuple val(sample), path(read1), path(read2), val(qc), val(type), path(reference)
@@ -338,7 +338,7 @@ process minimap2 {
 
 process samtools {
 
-    publishDir "${params.output}/samtools", mode: 'copy'
+    publishDir "${params.output}/samtools", mode: 'copy', pattern: '*.bam'
 
     input:
     tuple val(sample), path(reference), path(minimapOut)
@@ -356,7 +356,7 @@ process samtools {
 
 process freebayes {
 
-    publishDir "${params.output}/freebayes", mode: 'copy'
+    publishDir "${params.output}/freebayes", mode: 'copy', pattern: '*.vcf'
 
     input:
     tuple val(sample), path(reference), path(bamFile)
@@ -371,7 +371,7 @@ process freebayes {
 }
 
 process vcf_subset {
-    publishDir "${params.output}/final_vcf", mode: 'copy'
+    publishDir "${params.output}/final_vcf", mode: 'copy', pattern: '*.txt'
 
     input:
     tuple val(sample), path(reference), path(vcf), val(start), val(end), path(snps)
@@ -390,7 +390,7 @@ process vcf_subset {
 }
 
 process amrfinder {
-    publishDir "${params.output}/amrfinderplus", mode: 'copy'
+    publishDir "${params.output}/amrfinderplus", mode: 'copy', pattern: '*.out'
 
     input:
     tuple val(sample), path(fasta), val(qc)
@@ -514,8 +514,6 @@ process combine_reports{
     echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.out
     """
 }
-
-
  
 workflow {
 
@@ -586,31 +584,37 @@ workflow {
 
     // assembling the QC and Coverage threshold passed reads
     assemblies = assembly(cov_check.cov_out)
-
+    
+    passed_samples = assemblies.genomes
+                    .filter { tuple -> tuple[-1] == "PASS" }
+    
     ref_type = Channel.of(
         ["GCF_000027345", "type1"],
         ["GCF_001272835", "type2"]
     ).combine(references_ch, by:0)
-    
-    // create tuple of genome combinations with the references
-    assemblies
-        .combine(ref_type)
-        .set {inputSet}
+
+    //passed_samples.ifEmpty { error "All the input samples failed QC and assembly. Terminating..."}
+
+    passed_samples.map{ it[0] }
+                  .collect().subscribe {samples ->
+                        println samples.isEmpty() ? "Error: All the input reads failed QC. Terminating..." : "${samples.size()} samples passed QC."    
+                }
+
+    inputSet = assemblies.genomes.combine(ref_type)
 
     // getting results of fastANI for all samples compared to both references and grouping based on the samples
     results = fastANI(inputSet)
     grouped = results.fastANI_out.groupTuple()
-    
+
     // getting the best reference for each isolate/sample 
     out = bestRef(grouped)
 
     ref_type = ref_type.map {it[1..2]}
-    passed_samples = cov_check.cov_out
-                    .filter { tuple -> tuple[-1] == "PASS" }
+    
+    passed_samples = assemblies.assembly_out
                     .combine(ref_type)
                     .filter { tuple -> tuple[-2] == "type1"}
     
-
     minimapOut = minimap2(passed_samples)
     samOut = samtools(minimapOut)
     freebayesOut = freebayes(samOut)
@@ -626,7 +630,7 @@ workflow {
     vcf_out = vcf_subset(cleanedChannel)
     
     // amrfinder
-    amrfinder(assemblies)
+    amrfinder(assemblies.genomes)
 
     // SUMMARIES
 
