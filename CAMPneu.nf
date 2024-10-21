@@ -2,7 +2,7 @@
 
 nextflow.enable.dsl = 2
 
-params.input = ''
+params.input = '/scicomp/groups-pure/OID/NCIRD/DBD/RDB/PRS/PRS_ABiL_URDO/mycoplasma/CAMPneu/Fastq'
 params.output = ''
 params.snpFile = ''
 params.help = false
@@ -235,14 +235,24 @@ process assembly {
     tuple val(sampleID), path(read1), path(read2), val(qc)
 
     output:
-    tuple val(sampleID), path("${sampleID}.fasta"), val(qc), emit: genomes 
+    tuple val(sampleID), path("${sampleID}.fasta"), emit: genomes 
+    tuple val(sampleID), path(read1), path(read2), env(qc_new), emit: assembly_out 
+    env(qc_new), emit: status
 
     script:
     """
     if [ "${qc}" == "PASS" ]; then
         unicycler -1 ${read1} -2 ${read2} -o ${sampleID} --min_fasta_length 500 
         mv ./${sampleID}/assembly.fasta ./${sampleID}.fasta
+        qc_new="PASS"
+        if [ ! -s ./${sampleID}.fasta ]; then
+            qc_new="FAIL"
+            touch ${sampleID}.fasta
+            echo ">${sampleID}" > ${sampleID}.fasta
+            echo "Empty assmebly file generated.\nPossible reasons could be low quality of input reads, incorrect/incomplete data or contamination/misclassified data" >> ${sampleID}.fasta
+        fi
     else
+        qc_new="FAIL"
         touch ${sampleID}.fasta
         echo ">${sampleID}" > ${sampleID}.fasta
         echo "Skipping assembly for ${sampleID} due to QC failure" >> ${sampleID}.fasta
@@ -586,7 +596,7 @@ workflow {
     assemblies
         .combine(ref_type)
         .set {inputSet}
-    
+
     // getting results of fastANI for all samples compared to both references and grouping based on the samples
     results = fastANI(inputSet)
     grouped = results.fastANI_out.groupTuple()
@@ -600,7 +610,7 @@ workflow {
                     .combine(ref_type)
                     .filter { tuple -> tuple[-2] == "type1"}
     
-    
+
     minimapOut = minimap2(passed_samples)
     samOut = samtools(minimapOut)
     freebayesOut = freebayes(samOut)
