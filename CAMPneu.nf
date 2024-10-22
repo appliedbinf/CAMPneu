@@ -472,14 +472,14 @@ process combine_snp_summary {
     path(mid_summary)
 
     output:
-    path("summary_stats.txt")
+    path("run_summary.txt")
 
     script:
     """
     echo -e "Sample\tPos\tALT\tREF\tSNP" >> header.tsv
     cat header.tsv ${snp_files} | column -t > snp_summary.txt
     echo -e "\nMacrolide resistant SNP analysis\n" | cat - snp_summary.txt > temp.txt && mv temp.txt snp_summary.txt
-    cat ${mid_summary} snp_summary.txt > summary_stats.txt
+    cat ${mid_summary} snp_summary.txt > run_summary.txt
     """
 }
 
@@ -491,27 +491,27 @@ process combine_reports{
     tuple val(sample), path(kraken), path(fastp), path(coverage), path(bestRef), path(mrSnps)
 
     output:
-    path("${sample}_report.out")
+    path("${sample}_report.tsv")
     
     script:
     """
-    touch ${sample}_report.out
-    echo "Kraken Classfication\n" >> ${sample}_report.out
-    cat ${kraken} >> ${sample}_report.out
-    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.out
-    echo "Quality Filtering using Fastp\nSamples that have Qscore < 30 are marked as FAILED\n" >> ${sample}_report.out
-    cat ${fastp} >> ${sample}_report.out
-    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.out
-    echo "Coverage Filtering using Samtools Coverage\nSamples below 10x are marked as FAILED\n" >> ${sample}_report.out
-    cat ${coverage} >> ${sample}_report.out
-    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.out
-    echo "FASTani to select the best reference\n" >> ${sample}_report.out
-    cat ${bestRef} >> ${sample}_report.out
-    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.out
-    echo "Identification of Macrolide Resistant SNPs using Freebayes and bcftools" >> ${sample}_report.out
+    touch ${sample}_report.tsv
+    echo "Kraken Classfication\n" >> ${sample}_report.tsv
+    cat ${kraken} >> ${sample}_report.tsv
+    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.tsv
+    echo "Quality Filtering using Fastp\nSamples that have Qscore < 30 are marked as FAILED\n" >> ${sample}_report.tsv
+    cat ${fastp} >> ${sample}_report.tsv
+    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.tsv
+    echo "Coverage Filtering using Samtools Coverage\nSamples below 10x are marked as FAILED\n" >> ${sample}_report.tsv
+    cat ${coverage} >> ${sample}_report.tsv
+    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.tsv
+    echo "FASTani to select the best reference\n" >> ${sample}_report.tsv
+    cat ${bestRef} >> ${sample}_report.tsv
+    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.tsv
+    echo "Identification of Macrolide Resistant SNPs using Freebayes and bcftools" >> ${sample}_report.tsv
     echo -e "Sample\tPos\tALT\tREF\tSNP" | cat - ${mrSnps} > temp && mv temp ${mrSnps}
-    cat ${mrSnps} | column -t >> ${sample}_report.out
-    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.out
+    cat ${mrSnps} | column -t >> ${sample}_report.tsv
+    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.tsv
     """
 }
  
