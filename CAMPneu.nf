@@ -68,14 +68,7 @@ process createBedFile {
 
     script:
     """
-    cat > snp_ref1.bed <<EOF
-    NC_000912.1 120272	120273
-    NC_000912.1	121167	121168
-    NC_000912.1	122118	122119
-    NC_000912.1	122119	122120
-    NC_000912.1	122486	122487
-    NC_000912.1	122666	122667
-    EOF
+    printf "NC_000912.1\\t120272\\t120273\\nNC_000912.1\\t121167\\t121168\\nNC_000912.1\\t122118\\t122119\\nNC_000912.1\\t122119\\t122120\\nNC_000912.1\\t122486\\t122487\\nNC_000912.1\\t122666\\t122667" > snp_ref1.bed
     """
 }
  
@@ -371,21 +364,21 @@ process freebayes {
 }
 
 process vcf_subset {
-    publishDir "${params.output}/final_vcf", mode: 'copy', pattern: '*.txt'
+    publishDir "${params.output}/final_vcf", mode: 'copy', pattern: '*.vcf'
 
     input:
     tuple val(sample), path(reference), path(vcf), val(start), val(end), path(snps)
 
     output:
-    tuple val(sample), path("${vcf.simpleName}_all23S.subset.txt"), path("${vcf.simpleName}_identified.snps.txt")
+    tuple val(sample), path("${vcf.simpleName}_all23S.subset.vcf"), path("${vcf.simpleName}_identified.snps.vcf")
 
     script:
     """
     bcftools view -i 'QUAL>=30' ${vcf} -Oz -o ${vcf}.gz
     bcftools index ${vcf}.gz
     chrom=\$(bcftools query -f '%CHROM\t%POS\t%ID\t%REF\t%ALT\n' ${vcf}.gz | head -1 | cut -f 1)
-    bcftools view -r \${chrom}:${start}-${end} --no-header ${vcf}.gz > ${vcf.simpleName}_all23S.subset.txt
-    bcftools view -R ${snps} --no-header ${vcf}.gz > ${vcf.simpleName}_identified.snps.txt
+    bcftools view -r \${chrom}:${start}-${end} --no-header ${vcf}.gz > ${vcf.simpleName}_all23S.subset.vcf
+    bcftools view -R ${snps} --no-header ${vcf}.gz > ${vcf.simpleName}_identified.snps.vcf
     """
 }
 
@@ -443,7 +436,7 @@ process summary1 {
 process each_snp_summary {
 
     input:
-    tuple val(sample), path(mrSnps), path(allSnps)
+    tuple val(sample), path(allSnps), path(mrSnps)
 
     output:
     tuple val(sample), path("${sample}_snps.txt")
@@ -452,12 +445,12 @@ process each_snp_summary {
     """
     if [ -s "${mrSnps}" ]; then
         touch ${sample}_snps.txt
-        cut -f1-2,4-5 ${mrSnps} >> ${sample}_snps.txt
+        cut -f1-2,4-5 ${mrSnps} | awk '{print \$0, "macrolide resistant"}' >> ${sample}_snps.txt
         awk '{ new_col = \$2 - 120055; print "${sample}", \$0, \$3 new_col \$4 }' ${sample}_snps.txt > ${sample}_snps_out.txt
         awk '{\$2=""; print \$0}' ${sample}_snps_out.txt > ${sample}_snps.txt
     else
         touch ${sample}_snps.txt
-        echo "No macrolide resistant SNPs observed" >> ${sample}_snps_1.txt
+        echo "No macrolide resistant SNPs observed" | awk '{print \$0, "macrolide sensitive"}' >> ${sample}_snps_1.txt
         awk '{ print "${sample}", \$0 }' ${sample}_snps_1.txt > ${sample}_snps.txt
     fi
     """
@@ -472,14 +465,14 @@ process combine_snp_summary {
     path(mid_summary)
 
     output:
-    path("run_summary.txt")
+    path("summary_stats.txt")
 
     script:
     """
     echo -e "Sample\tPos\tALT\tREF\tSNP" >> header.tsv
     cat header.tsv ${snp_files} | column -t > snp_summary.txt
     echo -e "\nMacrolide resistant SNP analysis\n" | cat - snp_summary.txt > temp.txt && mv temp.txt snp_summary.txt
-    cat ${mid_summary} snp_summary.txt > run_summary.txt
+    cat ${mid_summary} snp_summary.txt > summary_stats.txt
     """
 }
 
@@ -491,27 +484,27 @@ process combine_reports{
     tuple val(sample), path(kraken), path(fastp), path(coverage), path(bestRef), path(mrSnps)
 
     output:
-    path("${sample}_report.tsv")
+    path("${sample}_report.out")
     
     script:
     """
-    touch ${sample}_report.tsv
-    echo "Kraken Classfication\n" >> ${sample}_report.tsv
-    cat ${kraken} >> ${sample}_report.tsv
-    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.tsv
-    echo "Quality Filtering using Fastp\nSamples that have Qscore < 30 are marked as FAILED\n" >> ${sample}_report.tsv
-    cat ${fastp} >> ${sample}_report.tsv
-    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.tsv
-    echo "Coverage Filtering using Samtools Coverage\nSamples below 10x are marked as FAILED\n" >> ${sample}_report.tsv
-    cat ${coverage} >> ${sample}_report.tsv
-    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.tsv
-    echo "FASTani to select the best reference\n" >> ${sample}_report.tsv
-    cat ${bestRef} >> ${sample}_report.tsv
-    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.tsv
-    echo "Identification of Macrolide Resistant SNPs using Freebayes and bcftools" >> ${sample}_report.tsv
+    touch ${sample}_report.out
+    echo "Kraken Classfication\n" >> ${sample}_report.out
+    cat ${kraken} >> ${sample}_report.out
+    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.out
+    echo "Quality Filtering using Fastp\nSamples that have Qscore < 30 are marked as FAILED\n" >> ${sample}_report.out
+    cat ${fastp} >> ${sample}_report.out
+    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.out
+    echo "Coverage Filtering using Samtools Coverage\nSamples below 10x are marked as FAILED\n" >> ${sample}_report.out
+    cat ${coverage} >> ${sample}_report.out
+    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.out
+    echo "FASTani to select the best reference\n" >> ${sample}_report.out
+    cat ${bestRef} >> ${sample}_report.out
+    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.out
+    echo "Identification of Macrolide Resistant SNPs using Freebayes and bcftools" >> ${sample}_report.out
     echo -e "Sample\tPos\tALT\tREF\tSNP" | cat - ${mrSnps} > temp && mv temp ${mrSnps}
-    cat ${mrSnps} | column -t >> ${sample}_report.tsv
-    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.tsv
+    cat ${mrSnps} | column -t >> ${sample}_report.out
+    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.out
     """
 }
  
@@ -547,7 +540,7 @@ workflow {
         error "ERROR: Missing required output parameter. Please specify the output directory using '--output'."
     }
 
-    Channel.fromFilePairs("${params.input}/*_{1,2,R1,R2,r1,r2}.{fastq,fq,FASTQ,FQ,fastq.gz,fq.gz,FASTQ.GZ,FQ.GZ}")
+    Channel.fromFilePairs("${params.input}/*_{1,2,R1,R2,r1,r2}*.{fastq,fq,FASTQ,FQ,fastq.gz,fq.gz,FASTQ.GZ,FQ.GZ}")
            .ifEmpty{ error "NO {reads}.fastq/fq files found in the specified directory: ${params.input}"}
            .set {paired_reads}
     
