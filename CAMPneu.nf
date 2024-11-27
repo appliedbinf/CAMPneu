@@ -129,8 +129,7 @@ process kraken {
         awk '{printf "%-25s\\t%-25s\\t%-25s\\n", \$1, \$2, \$3}' ${sampleID}_Kraken_1.tsv > ${sampleID}_Kraken.tsv
     else
         qc="FAIL"
-        touch ${sampleID}_Kraken.tsv
-        echo "Sample failed. " > ${sampleID}_Kraken.tsv       
+        awk '{printf "%-25s\\t%-25s\\t%-25s\\n", \$1, \$2, \$3}' ${sampleID}_Kraken_1.tsv > ${sampleID}_Kraken.tsv      
     fi
     """
 }
