@@ -68,7 +68,7 @@ process createBedFile {
 
     script:
     """
-    printf "NC_000912.1\\t120272\\t120273\\nNC_000912.1\\t121167\\t121168\\nNC_000912.1\\t122118\\t122119\\nNC_000912.1\\t122119\\t122120\\nNC_000912.1\\t122486\\t122487\\nNC_000912.1\\t122666\\t122667" > snp_ref1.bed
+    printf "NC_000912.1\\t120272\\t120273\\nNC_000912.1\\t121167\\t121168\\nNC_000912.1\\t122118\\t122119\\nNC_000912.1\\t122119\\t122120\\nNC_000912.1\\t122486\\t122487\\nNC_000912.1\\t122666\\t122667\\nNC_000912.1\\t122672\\t122673" > snp_ref1.bed
     """
 }
  
@@ -97,14 +97,14 @@ process gunzip_reads {
  
 process kraken {
 
-    publishDir "${params.output}/Kraken", mode: 'copy', pattern: '*.tsv'
+    publishDir "${params.output}/Kraken", mode: 'copy', pattern: '*tsv'
 
     input:
     tuple val(sampleID), path(read1), path(read2), path(db)   
 
     output:
     tuple val(sampleID), path(read1), path(read2), env(qc), emit: kraken_out
-    tuple val(sampleID), path("${sampleID}_Kraken.tsv"), emit: kraken_report
+    tuple val(sampleID), path("${sampleID}_Kraken_1.tsv"), emit: kraken_report
     tuple val(sampleID), env(percent), env(sp), env(qc), emit: kraken_summary
 
 
@@ -115,22 +115,27 @@ process kraken {
     --report ${sampleID}.report \
     --paired ${read1} ${read2} > ${sampleID}.Kraken.out
 
-    awk -F'\\t' '{if (\$4 == "G") {\$4 = "Genus"} else if (\$4 == "S") {\$4 = "Species"}; if ((\$4 == "Genus" || \$4 == "Species") && \$1 > 5) {gsub(/[[:space:]]+\$/, "", \$NF); print \$1 "\t" \$4 "\t" \$6}}' ${sampleID}.report > ${sampleID}.tsv
-    echo -e "Percent_Reads_Covered\tRank\tScientific_name" > header.tsv
-    cat header.tsv ${sampleID}.tsv > ${sampleID}_Kraken_1.tsv
-    sp=\$(grep -w 'Species' ${sampleID}_Kraken_1.tsv | cut -f3 | sed 's/^[ \t]*//' | sed 's/ /_/g')
-    percent=\$(grep -w 'Species' ${sampleID}_Kraken_1.tsv | cut -f1 | sed 's/^[ \t]*//')
+    awk '{if (\$4 == "G") {\$4 = "Genus"} else if (\$4 == "S") {\$4 = "Species"}; if ((\$4 == "Genus" || \$4 == "Species")) {gsub(/[[:space:]]+\$/, "", \$NF); print \$1 "\t" \$4 "\t" \$6 "\t" \$7}}' ${sampleID}.report > ${sampleID}.tsv
+    awk '{printf "%s\\t%s\\t%s_%s\\n", \$1, \$2, \$3, \$4}' ${sampleID}.tsv > ${sampleID}_Kraken.tsv
+    if grep "Mycoplasmoides_pneumoniae" ${sampleID}_Kraken.tsv > ${sampleID}_Kraken_mp.tsv; then
+        percent=\$(grep -w 'Species' ${sampleID}_Kraken_mp.tsv | cut -f1) 
+        sp=\$(grep -w 'Species' ${sampleID}_Kraken_mp.tsv | cut -f3)
+        mp_percent=\${percent%.*}
 
-    mp_percent=\$(grep 'Mycoplasmoides pneumoniae' ${sampleID}_Kraken_1.tsv | cut -f1 | sed 's/^[ \t]*//')
-    mp_percent=\${mp_percent%.*}
-
-    if [ "\${mp_percent}" -ge 90 ]; then
-        qc="PASS"
-        awk '{printf "%-25s\\t%-25s\\t%-25s\\n", \$1, \$2, \$3}' ${sampleID}_Kraken_1.tsv > ${sampleID}_Kraken.tsv
+            if [ "\${mp_percent}" -ge 90 ]; then
+                qc="PASS"
+            else
+                qc="FAIL"
+            fi
     else
         qc="FAIL"
-        awk '{printf "%-25s\\t%-25s\\t%-25s\\n", \$1, \$2, \$3}' ${sampleID}_Kraken_1.tsv > ${sampleID}_Kraken.tsv      
+        percent=0 
+        sp="NA"
+        echo -e "0\\tNA\\tNA" > ${sampleID}_Kraken_mp.tsv
     fi
+    echo -e "Percent_reads_covered\\tRank\\tScientific_name" > ${sampleID}_Kraken.tsv
+    cat ${sampleID}_Kraken_mp.tsv >> ${sampleID}_Kraken.tsv
+    awk '{printf "%-25s\\t%-20s\\t%-25s\\n", \$1, \$2, \$3}' ${sampleID}_Kraken.tsv > ${sampleID}_Kraken_1.tsv
     """
 }
 
@@ -162,9 +167,9 @@ process fastp_jq {
     tuple val(sampleID), path(read1), path(read2), path(json), val(qc)
 
     output:
-    tuple val(sampleID), path(read1), path(read2), env(fastp_qc), emit: fastp_out
+    tuple val(sampleID), path(read1), path(read2), env(fastp_qc_new), emit: fastp_out
     tuple val(sampleID), path("${read1.baseName}_fastpQC.tsv"), emit: fastp_report
-    tuple val(sampleID), env(rate), env(avg_qscore), env(fastp_qc), emit: fastp_summary
+    tuple val(sampleID), env(rate), env(avg_qscore), env(fastp_qc_new), emit: fastp_summary
 
 
     shell:
@@ -180,9 +185,13 @@ process fastp_jq {
         awk -v avg_qscore=\$avg_qscore '{print \$0 "\\t" avg_qscore}' ${read1.baseName}.tsv > temp && mv temp ${read1.baseName}.tsv
         echo -e "Total_reads_before_filtering\tTotal_reads_after_filtering\tQ30_rate\tAvg_QScore" | cat - ${read1.baseName}.tsv > temp && mv temp ${read1.baseName}.tsv
         awk '{printf "%-30s\\t%-30s\\t%-20s\\t%-20s\\n", \$1, \$2, \$3, \$4}' ${read1.baseName}.tsv > ${read1.baseName}_fastpQC.tsv
-    else
-        truncate -s 0 ${read1.baseName}_fastpQC.tsv
+        fastp_qc_new="PASS"
+    elif [ "\${fastp_qc}" == PASS ] && [ "${qc}" == "FAIL" ]; then
+        > ${read1.baseName}_fastpQC.tsv
         echo "sample failed quality check" > ${read1.baseName}_fastpQC.tsv
+        fastp_qc_new="FAIL"
+        avg_qscore="NA"
+        rate="NA"
     fi
     """
 }
@@ -197,24 +206,34 @@ process coverage_check {
     output:
     tuple val(sampleID), path(qc_read1), path(qc_read2), env(qc), emit: cov_out
     tuple val(sampleID), path("${sampleID}.cov.tsv"), emit: cov_report
-    tuple val(sampleID), env(percent), env(coverage), env(qc), emit: cov_summary
+    tuple val(sampleID), env(coverage), env(qc_cov), env(qc), emit: cov_summary
 
     script:
     """
-    if [ "${qc}" == "FAIL" ]; then
-        echo "Sample failed quality check" > ${sampleID}.cov.tsv
-        coverage="FAIL"
-        percent=0
-        qc="FAIL"
-    else
+    if [ "${qc}" == "PASS" ]; then
         minimap2 -ax sr -o ${sampleID}.sam ${reference} ${qc_read1} ${qc_read2}
         samtools view -b ${sampleID}.sam > ${sampleID}.bam
         samtools sort ${sampleID}.bam > ${sampleID}.sorted.bam
-        samtools coverage ${sampleID}.sorted.bam > ${sampleID}.cov.txt
-        coverage=\$(awk 'NR==2 { if (\$7 < 10) print "FAIL"; else if (\$7 <=30 )print "PASS-Coverage<30x"; else print "PASS-Coverage>30x"}' ${sampleID}.cov.txt)
-        percent=\$(cut -f 7 ${sampleID}.cov.txt | grep '^[0-9].*')
-        awk '{printf "%-10s\\t%-10s\\t%-10s\\t%-10s\\t%-10s\\t%-10s\\t%-10s\\t%-10s\\t%-10s\\n", \$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9}' ${sampleID}.cov.txt > ${sampleID}.cov.tsv
-        qc="PASS"
+        samtools coverage ${sampleID}.sorted.bam > ${sampleID}.tsv
+        awk '{printf "%-10s\\t%-10s\\t%-10s\\t%-10s\\t%-10s\\t%-10s\\t%-10s\\t%-10s\\n", \$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8}' ${sampleID}.tsv > ${sampleID}.cov.tsv
+        coverage=\$(cut -f 7 ${sampleID}.cov.tsv | grep '^[0-9].*')
+        coverage=\${coverage%.*}
+
+        if [ "\${coverage}" > 30 ]; then
+            qc_cov="PASS-Coverage>30x"
+            qc="PASS"
+        elif [ "\${coverage}" > 10 ]; then
+            qc_cov="PASS-Coverage<30x"
+            qc="PASS"
+        else
+            qc_cov="FAIL-Coverage<10x"
+            qc="FAIL"
+        fi
+    else
+        echo "Sample failed quality check" > ${sampleID}.cov.tsv
+        qc_cov="FAIL"
+        qc="FAIL"
+        coverage=0
     fi
     """
 
@@ -307,7 +326,8 @@ process bestRef {
         echo "No best reference because sample failed QC" >> ${sample}_bestRef.tsv
         ref="NO_BEST_REF"
         qc_new="FAIL"
-        type_new="no_type"
+        type_new="NA"
+        ani="NA"
     fi
     """
 }
@@ -427,12 +447,14 @@ process summary1 {
     newlines="Summary of Kraken Classification and QC thresholds\nReads below a qscore of 30 are marked as FAILED and dropped\nReads with coverage below 10X are marked as failed and dropped\n"
     echo ${header} >> final_summary_1.txt
     echo '${row}' >> final_summary_1.txt
-    column -t final_summary_1.txt > final_summary.txt
+    awk '{printf "%-30s\\t%-15s\\t%-30s\\t%-20s\\t%-15s\\t%-15s\\t%-20s\\t%-15s\\t%-15s\\n", \$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9}' final_summary_1.txt > final_summary.txt
     echo -e "\$newlines" | cat - final_summary.txt > temp.txt && mv temp.txt final_summary.txt
     """
 }
 
 process each_snp_summary {
+
+    publishDir "${params.output}/testSnp", mode: 'copy'
 
     input:
     tuple val(sample), path(allSnps), path(mrSnps)
@@ -444,12 +466,12 @@ process each_snp_summary {
     """
     if [ -s "${mrSnps}" ]; then
         touch ${sample}_snps.txt
-        cut -f1-2,4-5 ${mrSnps} | awk '{print \$0, "macrolide resistant"}' >> ${sample}_snps.txt
+        cut -f1-2,4-5 ${mrSnps} >> ${sample}_snps.txt
         awk '{ new_col = \$2 - 120055; print "${sample}", \$0, \$3 new_col \$4 }' ${sample}_snps.txt > ${sample}_snps_out.txt
-        awk '{\$2=""; print \$0}' ${sample}_snps_out.txt > ${sample}_snps.txt
+        awk '{\$2=""; print \$0}' ${sample}_snps_out.txt | awk '{print \$0, "macrolide resistant"}' > ${sample}_snps.txt
     else
         touch ${sample}_snps.txt
-        echo "No macrolide resistant SNPs observed" | awk '{print \$0, "macrolide sensitive"}' >> ${sample}_snps_1.txt
+        echo "NA NA NA NA" | awk '{print \$0, "macrolide sensitive"}' >> ${sample}_snps_1.txt
         awk '{ print "${sample}", \$0 }' ${sample}_snps_1.txt > ${sample}_snps.txt
     fi
     """
@@ -468,9 +490,10 @@ process combine_snp_summary {
 
     script:
     """
-    echo -e "Sample\tPos\tALT\tREF\tSNP" >> header.tsv
-    cat header.tsv ${snp_files} | column -t > snp_summary.txt
-    echo -e "\nMacrolide resistant SNP analysis\n" | cat - snp_summary.txt > temp.txt && mv temp.txt snp_summary.txt
+    echo -e "Sample\tPos\tREF\tALT\tSNP\tType" >> header.tsv
+    cat header.tsv ${snp_files} > snp_summary_1.txt
+    awk '{printf "%-30s\\t%-10s\\t%-10s\\t%-10s\\t%-10s\\t%-10s\\t%-10s\\n", \$1, \$2, \$3, \$4, \$5, \$6, \$7}' snp_summary_1.txt > snp_summary.txt
+    echo -e "\nMacrolide resistant SNP analysis\nOnly passed samples are tested for presence of SNPs\n\n" | cat - snp_summary.txt > temp.txt && mv temp.txt snp_summary.txt
     cat ${mid_summary} snp_summary.txt > summary_stats.txt
     """
 }
@@ -501,8 +524,8 @@ process combine_reports{
     cat ${bestRef} >> ${sample}_report.out
     echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.out
     echo "Identification of Macrolide Resistant SNPs using Freebayes and bcftools" >> ${sample}_report.out
-    echo -e "Sample\tPos\tALT\tREF\tSNP" | cat - ${mrSnps} > temp && mv temp ${mrSnps}
-    cat ${mrSnps} | column -t >> ${sample}_report.out
+    echo -e "Sample\tPos\tALT\tREF\tSNP\tType" | cat - ${mrSnps} > temp && mv temp ${mrSnps}
+    cat ${mrSnps} >> ${sample}_report.out
     echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.out
     """
 }
@@ -557,12 +580,11 @@ workflow {
     kraken_run = kraken(kraken_input)
     
     kraken_summary = kraken_run.kraken_summary
-                     .map{ line -> line.collect {it.replaceAll(' ','|')}}
 
     // Run fastp to filter reads based on Q-scores and assign QC value of PASS or FAIL
     fastp_json = fastp(kraken_run.kraken_out)
     fastp_run = fastp_jq(fastp_json)
-    
+
     references_ch = references.map { file ->
         def id = file.getBaseName().split('\\.1')[0]  // Extract the identifier 
         [id, file]  // Return a tuple of [id, file]
@@ -571,7 +593,7 @@ workflow {
     // Run the coverage check
     cov_input = fastp_run.fastp_out
                 .combine(references_ch.first())
-    
+
     cov_check = coverage_check(cov_input)
 
     // assembling the QC and Coverage threshold passed reads
@@ -579,11 +601,6 @@ workflow {
     
     passed_samples = assemblies.genomes
                     .filter { tuple -> tuple[-1] == "PASS" }
-    
-    ref_type = Channel.of(
-        ["GCF_000027345", "type1"],
-        ["GCF_001272835", "type2"]
-    ).combine(references_ch, by:0)
 
     //passed_samples.ifEmpty { error "All the input samples failed QC and assembly. Terminating..."}
 
@@ -591,6 +608,11 @@ workflow {
                   .collect().subscribe {samples ->
                         println samples.isEmpty() ? "Error: All the input reads failed QC. Terminating..." : "${samples.size()} samples passed QC."    
                 }
+
+    ref_type = Channel.of(
+        ["GCF_000027345", "type1"],
+        ["GCF_001272835", "type2"]
+    ).combine(references_ch, by:0)
 
     inputSet = assemblies.genomes.combine(ref_type)
 
@@ -607,6 +629,7 @@ workflow {
                     .combine(ref_type)
                     .filter { tuple -> tuple[-2] == "type1"}
     
+
     minimapOut = minimap2(passed_samples)
     samOut = samtools(minimapOut)
     freebayesOut = freebayes(samOut)
@@ -641,6 +664,7 @@ workflow {
 
     // summary
     //summary_values = [sampleID ,kraken_percent, kraken_class, fastp_score_rate, avgQscore, coverage_x, cov_qc, type, ani]
+
     summary_values = kraken_summary
                     .combine(fastp_run.fastp_summary, by:0)
                     .map {it[0..2] + it[4..5]}
