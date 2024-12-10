@@ -2,7 +2,7 @@
 
 nextflow.enable.dsl = 2
 
-params.input = '/scicomp/groups-pure/OID/NCIRD/DBD/RDB/PRS/PRS_ABiL_URDO/mycoplasma/CAMPneu/Fastq'
+params.input = ''
 params.output = ''
 params.snpFile = ''
 params.help = false
@@ -104,7 +104,7 @@ process kraken {
 
     output:
     tuple val(sampleID), path(read1), path(read2), env(qc), emit: kraken_out
-    tuple val(sampleID), path("${sampleID}_Kraken_1.tsv"), emit: kraken_report
+    tuple val(sampleID), path("${sampleID}_Kraken.tsv"), emit: kraken_report
     tuple val(sampleID), env(percent), env(sp), env(qc), emit: kraken_summary
 
 
@@ -115,27 +115,17 @@ process kraken {
     --report ${sampleID}.report \
     --paired ${read1} ${read2} > ${sampleID}.Kraken.out
 
-    awk '{if (\$4 == "G") {\$4 = "Genus"} else if (\$4 == "S") {\$4 = "Species"}; if ((\$4 == "Genus" || \$4 == "Species")) {gsub(/[[:space:]]+\$/, "", \$NF); print \$1 "\t" \$4 "\t" \$6 "\t" \$7}}' ${sampleID}.report > ${sampleID}.tsv
-    awk '{printf "%s\\t%s\\t%s_%s\\n", \$1, \$2, \$3, \$4}' ${sampleID}.tsv > ${sampleID}_Kraken.tsv
-    if grep "Mycoplasmoides_pneumoniae" ${sampleID}_Kraken.tsv > ${sampleID}_Kraken_mp.tsv; then
-        percent=\$(grep -w 'Species' ${sampleID}_Kraken_mp.tsv | cut -f1) 
-        sp=\$(grep -w 'Species' ${sampleID}_Kraken_mp.tsv | cut -f3)
-        mp_percent=\${percent%.*}
+    grep -w "S" ${sampleID}.report | head -n 1 | awk '{printf "%-10s%s_%s\\n", \$1, \$6, \$7}' > ${sampleID}_Kraken.tsv
+    sp=\$(awk '{print \$2}' ${sampleID}_Kraken.tsv)
+    percent=\$(awk '{print \$1}' ${sampleID}_Kraken.tsv)
+    percent_int=\${percent%.*}
 
-            if [ "\${mp_percent}" -ge 90 ]; then
-                qc="PASS"
-            else
-                qc="FAIL"
-            fi
+    if [[ \${percent_int} -ge 90 && \${sp} == "Mycoplasmoides_pneumoniae" ]]; then
+        qc="PASS"
+        sp="Mycoplasma_pneumoniae"
     else
         qc="FAIL"
-        percent=0 
-        sp="NA"
-        echo -e "0\\tNA\\tNA" > ${sampleID}_Kraken_mp.tsv
     fi
-    echo -e "Percent_reads_covered\\tRank\\tScientific_name" > ${sampleID}_Kraken.tsv
-    cat ${sampleID}_Kraken_mp.tsv >> ${sampleID}_Kraken.tsv
-    awk '{printf "%-25s\\t%-20s\\t%-25s\\n", \$1, \$2, \$3}' ${sampleID}_Kraken.tsv > ${sampleID}_Kraken_1.tsv
     """
 }
 
@@ -332,6 +322,8 @@ process bestRef {
     """
 }
 
+/// Post assembly processing to identify SNPs from passed samples
+
 process minimap2 {
 
     publishDir "${params.output}/minimap2", mode: 'copy', pattern: '*.sam'
@@ -431,7 +423,7 @@ process amrfinder {
 
 ///// SUMMARIES
 
-process summary1 {
+process qc_summary {
 
     input:
     val(sampleSummaries)
@@ -452,7 +444,7 @@ process summary1 {
     """
 }
 
-process each_snp_summary {
+process snp_summary {
 
     publishDir "${params.output}/testSnp", mode: 'copy'
 
@@ -543,7 +535,7 @@ workflow {
         kraken_db = downloadKrakenDB()        
     }
 
-    ///// REFERENCE FILES - TYPE 1 AND TYPE 2 /////
+    /// REFERENCE FILES - TYPE 1 AND TYPE 2 /////
     def ref1 = file("${params.reference_dir}/GCF_000027345.1_ASM2734v1_genomic.fna")
     def ref2 = file("${params.reference_dir}/GCF_001272835.1_ASM127283v1_genomic.fna")    
     if (ref1.exists() && ref2.exists()) {
@@ -583,6 +575,7 @@ workflow {
 
     // Run fastp to filter reads based on Q-scores and assign QC value of PASS or FAIL
     fastp_json = fastp(kraken_run.kraken_out)
+    
     fastp_run = fastp_jq(fastp_json)
 
     references_ch = references.map { file ->
@@ -649,7 +642,7 @@ workflow {
 
     // SUMMARIES
 
-    snpSumOut = each_snp_summary(vcf_out)
+    snpSumOut = snp_summary(vcf_out)
     snpSumOut.map { it[1] }
              .collect()
              .set { snpSumOut1 }
@@ -674,9 +667,9 @@ workflow {
                     .collect{ summary -> summary.join('\t')}
                     .set { sampleSummaries }
     
-    summary1 = summary1(sampleSummaries)
+    qc_summary = qc_summary(sampleSummaries)
 
     // summarising results from SNP analysis and combining with previous results to create one single run summary
 
-    combine_snp_summary(snpSumOut1, summary1)
+    combine_snp_summary(snpSumOut1, qc_summary)
 }
