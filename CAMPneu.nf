@@ -2,8 +2,9 @@
 
 nextflow.enable.dsl = 2
 
+params.version = ''
 params.input = ''
-params.output = ''
+params.output = '/scicomp/groups-pure/OID/NCIRD/DBD/RDB/PRS/PRS_ABiL_URDO/mycoplasma/CAMPneu/LOD_methodValidation'
 params.snpFile = ''
 params.help = false
 
@@ -39,7 +40,7 @@ process downloadKrakenDB {
     script:
     """
     mkdir -p minikraken_8GB_202003
-    wget -O minikraken_8GB_202003.tgz https://genome-idx.s3.amazonaws.com/kraken/k2_standard_08gb_20240112.tar.gz
+    wget -O minikraken_8GB_202003.tgz https://genome-idx.s3.amazonaws.com/kraken/k2_standard_08gb_20240904.tar.gz
     tar -xvzf minikraken_8GB_202003.tgz -C minikraken_8GB_202003
     rm minikraken_8GB_202003.tgz
     """
@@ -125,6 +126,8 @@ process kraken {
         sp="Mycoplasma_pneumoniae"
     else
         qc="FAIL"
+        sp="NA"
+        percent="NA"
     fi
     """
 }
@@ -209,10 +212,10 @@ process coverage_check {
         coverage=\$(cut -f 7 ${sampleID}.cov.tsv | grep '^[0-9].*')
         coverage=\${coverage%.*}
 
-        if [ "\${coverage}" > 30 ]; then
+        if [ "\${coverage}" -gt 30 ]; then
             qc_cov="PASS-Coverage>30x"
             qc="PASS"
-        elif [ "\${coverage}" > 10 ]; then
+        elif [ "\${coverage}" -ge 10 ]; then
             qc_cov="PASS-Coverage<30x"
             qc="PASS"
         else
@@ -260,6 +263,42 @@ process assembly {
     fi
     """
 }
+
+// Perform mlst 
+
+process mlst {
+
+    publishDir "${params.output}/mlst", mode: 'copy'
+
+    input:
+    tuple val(sample), path(assembly), val(qc)
+
+    output:
+    tuple val(sample), path("${sample}.mlst.out"), emit: mlst_report
+    tuple val(sample), env(st), env(profile), env(qc), emit: mlst_summary
+
+    script:
+    """
+    if [ "${qc}" == "PASS" ]; then
+        mlst ${assembly} --legacy --scheme mpneumoniae > ${sample}.mlst.out
+        profile=\$(awk 'NR==2 {print \$4","\$5","\$6","\$7","\$8","\$9","\$10","\$11}' ${sample}.mlst.out)
+        if [[ "\${profile}" == *~* ]]; then 
+            st="Novel_Allele"
+        else
+            st=\$(awk '{if (NR==2) print \$3}' ${sample}.mlst.out)
+        fi
+        qc="PASS"
+    else
+        touch ${sample}.mlst.out
+        echo "no sequence typing data for failed sample" > ${sample}.mlst.out
+        st="NA"
+        profile="NA"
+        qc="FAIL"
+    fi
+    """
+}
+
+// best ref
 
 process fastANI{
 
@@ -332,7 +371,7 @@ process minimap2 {
     tuple val(sample), path(read1), path(read2), val(qc), val(type), path(reference)
 
     output:
-    tuple val(sample), path("${reference}"), path("${read1.baseName}.sam")
+    tuple val(sample), path("${reference}"), path("${read1.baseName}.sam"), val(qc)
 
     script:
     """
@@ -345,10 +384,10 @@ process samtools {
     publishDir "${params.output}/samtools", mode: 'copy', pattern: '*.bam'
 
     input:
-    tuple val(sample), path(reference), path(minimapOut)
+    tuple val(sample), path(reference), path(minimapOut), val(qc)
 
     output:
-    tuple val(sample), path("${reference}"), path("${minimapOut.baseName}.sorted.bam")
+    tuple val(sample), path("${reference}"), path("${minimapOut.baseName}.sorted.bam"), val(qc)
 
     script:
     """
@@ -363,10 +402,10 @@ process freebayes {
     publishDir "${params.output}/freebayes", mode: 'copy', pattern: '*.vcf'
 
     input:
-    tuple val(sample), path(reference), path(bamFile)
+    tuple val(sample), path(reference), path(bamFile), val(qc)
 
     output:
-    tuple val(sample), path(reference), path("${bamFile.baseName}.vcf")
+    tuple val(sample), path(reference), path("${bamFile.baseName}.vcf"), val(qc)
 
     script:
     """
@@ -378,10 +417,10 @@ process vcf_subset {
     publishDir "${params.output}/final_vcf", mode: 'copy', pattern: '*.vcf'
 
     input:
-    tuple val(sample), path(reference), path(vcf), val(start), val(end), path(snps)
+    tuple val(sample), path(reference), path(vcf), val(qc), val(start), val(end), path(snps)
 
     output:
-    tuple val(sample), path("${vcf.simpleName}_all23S.subset.vcf"), path("${vcf.simpleName}_identified.snps.vcf")
+    tuple val(sample), path("${vcf.simpleName}_all23S.subset.vcf"), path("${vcf.simpleName}_identified.snps.vcf"), val(qc)
 
     script:
     """
@@ -392,6 +431,8 @@ process vcf_subset {
     bcftools view -R ${snps} --no-header ${vcf}.gz > ${vcf.simpleName}_identified.snps.vcf
     """
 }
+
+/// AMR Gene identification
 
 process amrfinder {
     publishDir "${params.output}/amrfinderplus", mode: 'copy', pattern: '*.out'
@@ -421,6 +462,7 @@ process amrfinder {
     """
 }
 
+
 ///// SUMMARIES
 
 process qc_summary {
@@ -432,39 +474,41 @@ process qc_summary {
     path("final_summary.txt")
 
     script:
-    def header = "SampleID\tKraken_Percent\tKraken_Class\tFastp_Score_Rate\tAverage_QC\tCoverage_X\tQC\tType\tANI"
+    def header = "SampleID\tKraken_Percent\tKraken_Class\tFastp_Score_Rate\tAverage_QC\tCoverage_X\tQC\tP1_Type\tANI\tST\tST_Profile"
     def row = sampleSummaries.join("\n")
     """
     touch final_summary_1.txt
     newlines="Summary of Kraken Classification and QC thresholds\nReads below a qscore of 30 are marked as FAILED and dropped\nReads with coverage below 10X are marked as failed and dropped\n"
     echo ${header} >> final_summary_1.txt
     echo '${row}' >> final_summary_1.txt
-    awk '{printf "%-30s\\t%-15s\\t%-30s\\t%-20s\\t%-15s\\t%-15s\\t%-20s\\t%-15s\\t%-15s\\n", \$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9}' final_summary_1.txt > final_summary.txt
+    awk '{printf "%-30s\\t%-35s\\t%-40s\\t%-20s\\t%-15s\\t%-15s\\t%-20s\\t%-15s\\t%-25s\\t%-15s\\t%-15s\\t%-15s\\n", \$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9, \$10, \$11, \$12}' final_summary_1.txt > final_summary.txt
     echo -e "\$newlines" | cat - final_summary.txt > temp.txt && mv temp.txt final_summary.txt
     """
 }
 
 process snp_summary {
 
-    publishDir "${params.output}/testSnp", mode: 'copy'
-
     input:
-    tuple val(sample), path(allSnps), path(mrSnps)
+    tuple val(sample), path(allSnps), path(mrSnps), val(qc)
 
     output:
     tuple val(sample), path("${sample}_snps.txt")
 
     script:
     """
-    if [ -s "${mrSnps}" ]; then
+    if [ "${qc}" == "PASS" ]; then
+        if [ -s "${mrSnps}" ]; then
+            touch ${sample}_snps.txt
+            cut -f1-2,4-5 ${mrSnps} >> ${sample}_snps.txt
+            awk '{ new_col = \$2 - 120056; print "${sample}", \$0, \$3 new_col \$4 }' ${sample}_snps.txt > ${sample}_snps_out.txt
+            awk '{\$2=""; print \$0}' ${sample}_snps_out.txt | awk '{print \$0, "Resistant"}' > ${sample}_snps.txt
+        else
+            touch ${sample}_snps.txt
+            echo "NA NA NA NA" | awk '{print \$0, "Sensitive"}' >> ${sample}_snps_1.txt
+            awk '{ print "${sample}", \$0 }' ${sample}_snps_1.txt > ${sample}_snps.txt
+        fi
+    else 
         touch ${sample}_snps.txt
-        cut -f1-2,4-5 ${mrSnps} >> ${sample}_snps.txt
-        awk '{ new_col = \$2 - 120055; print "${sample}", \$0, \$3 new_col \$4 }' ${sample}_snps.txt > ${sample}_snps_out.txt
-        awk '{\$2=""; print \$0}' ${sample}_snps_out.txt | awk '{print \$0, "macrolide resistant"}' > ${sample}_snps.txt
-    else
-        touch ${sample}_snps.txt
-        echo "NA NA NA NA" | awk '{print \$0, "macrolide sensitive"}' >> ${sample}_snps_1.txt
-        awk '{ print "${sample}", \$0 }' ${sample}_snps_1.txt > ${sample}_snps.txt
     fi
     """
 
@@ -482,7 +526,7 @@ process combine_snp_summary {
 
     script:
     """
-    echo -e "Sample\tPos\tREF\tALT\tSNP\tType" >> header.tsv
+    echo -e "Sample\tPos\tREF\tALT\tSNP\tMacrolide_Susceptibility(Sensitive/Resistant)" >> header.tsv
     cat header.tsv ${snp_files} > snp_summary_1.txt
     awk '{printf "%-30s\\t%-10s\\t%-10s\\t%-10s\\t%-10s\\t%-10s\\t%-10s\\n", \$1, \$2, \$3, \$4, \$5, \$6, \$7}' snp_summary_1.txt > snp_summary.txt
     echo -e "\nMacrolide resistant SNP analysis\nOnly passed samples are tested for presence of SNPs\n\n" | cat - snp_summary.txt > temp.txt && mv temp.txt snp_summary.txt
@@ -495,7 +539,7 @@ process combine_reports{
     publishDir "${params.output}/sample_reports", mode: 'copy'
     
     input:
-    tuple val(sample), path(kraken), path(fastp), path(coverage), path(bestRef), path(mrSnps)
+    tuple val(sample), path(kraken), path(fastp), path(coverage), path(mlst), path(bestRef), path(mrSnps)
 
     output:
     path("${sample}_report.out")
@@ -511,6 +555,9 @@ process combine_reports{
     echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.out
     echo "Coverage Filtering using Samtools Coverage\nSamples below 10x are marked as FAILED\n" >> ${sample}_report.out
     cat ${coverage} >> ${sample}_report.out
+    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.out
+    echo "Sequence typing using MLST\n" >> ${sample}_report.out
+    cat ${mlst} >> ${sample}_report.out
     echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.out
     echo "FASTani to select the best reference\n" >> ${sample}_report.out
     cat ${bestRef} >> ${sample}_report.out
@@ -591,6 +638,9 @@ workflow {
 
     // assembling the QC and Coverage threshold passed reads
     assemblies = assembly(cov_check.cov_out)
+
+    //mlst
+    mlst = mlst(assemblies.genomes)
     
     passed_samples = assemblies.genomes
                     .filter { tuple -> tuple[-1] == "PASS" }
@@ -601,13 +651,14 @@ workflow {
                   .collect().subscribe {samples ->
                         println samples.isEmpty() ? "Error: All the input reads failed QC. Terminating..." : "${samples.size()} samples passed QC."    
                 }
-
+    
     ref_type = Channel.of(
         ["GCF_000027345", "type1"],
         ["GCF_001272835", "type2"]
     ).combine(references_ch, by:0)
 
     inputSet = assemblies.genomes.combine(ref_type)
+    
 
     // getting results of fastANI for all samples compared to both references and grouping based on the samples
     results = fastANI(inputSet)
@@ -629,10 +680,10 @@ workflow {
 
     inputVcf = Channel.of(["120057", "122961", snpFile.bed])
     inputVcf = freebayesOut.combine(inputVcf)
-    
+
     cleanedChannel = inputVcf.map { tuple ->
-        def path = tuple[5].get() // Assuming the DataflowVariable is the 6th element
-        tuple[0..4] + [path]      // Return the tuple with the path instead of the DataflowVariable
+        def path = tuple[6].get() // Assuming the DataflowVariable is the 6th element
+        tuple[0..5] + [path]      // Return the tuple with the path instead of the DataflowVariable
     }
     
     vcf_out = vcf_subset(cleanedChannel)
@@ -649,10 +700,11 @@ workflow {
 
     combined = kraken_run.kraken_report
             .combine(fastp_run.fastp_report, by:0)
-            .combine(cov_check.cov_report, by:0)  
+            .combine(cov_check.cov_report, by:0) 
+            .combine(mlst.mlst_report, by:0)
             .combine(out.bestRef_report, by:0)
             .combine(snpSumOut, by:0)
-
+            
     combine_reports(combined)
 
     // summary
@@ -664,6 +716,8 @@ workflow {
                     .combine(cov_check.cov_summary, by:0)
                     .map {it[0..6]}
                     .combine(out.bestRef_summary, by:0)
+                    .combine(mlst.mlst_summary, by:0)
+                    .map {it[0..10]}
                     .collect{ summary -> summary.join('\t')}
                     .set { sampleSummaries }
     
