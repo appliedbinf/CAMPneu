@@ -2,7 +2,7 @@
 
 nextflow.enable.dsl = 2
 
-params.version = ''
+params.version = '1.1.1'
 params.input = ''
 params.output = '/scicomp/groups-pure/OID/NCIRD/DBD/RDB/PRS/PRS_ABiL_URDO/mycoplasma/CAMPneu/LOD_methodValidation'
 params.snpFile = ''
