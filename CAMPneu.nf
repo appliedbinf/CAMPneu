@@ -593,6 +593,11 @@ workflow {
         references = download_refs()
     }
     
+    references_ch = references.map { file ->
+        def id = file.getName().split('\\.1')[0]  // Extract the identifier 
+        [id, file]  // Return a tuple of [id, file]
+    }
+
     ///// UNZIP ZIPPED READS /////
     if (!params.input) {
         error "ERROR: Missing required input parameter. Please specify the input directory using '--input'."
@@ -625,12 +630,7 @@ workflow {
     
     fastp_run = fastp_jq(fastp_json)
 
-    references_ch = references.map { file ->
-        def id = file.getBaseName().split('\\.1')[0]  // Extract the identifier 
-        [id, file]  // Return a tuple of [id, file]
-    }
-
-    // Run the coverage check
+    //Run the coverage check
     cov_input = fastp_run.fastp_out
                 .combine(references_ch.first())
 
