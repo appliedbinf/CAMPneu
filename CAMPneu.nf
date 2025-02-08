@@ -52,8 +52,10 @@ process download_refs {
     publishDir "${params.reference_dir}", mode: 'copy'
 
     output:
-    tuple path('GCF_000027345.1_ASM2734v1_genomic.fna'), path('GCF_001272835.1_ASM127283v1_genomic.fna')
- 
+    //tuple path('GCF_000027345.1_ASM2734v1_genomic.fna'), path('GCF_001272835.1_ASM127283v1_genomic.fna')
+    path('GCF_000027345.1_ASM2734v1_genomic.fna'), emit: ref1
+    path('GCF_001272835.1_ASM127283v1_genomic.fna'), emit: ref2
+
     script:
     """
     wget -O GCF_000027345.1_ASM2734v1_genomic.fna.gz ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/027/345/GCF_000027345.1_ASM2734v1/GCF_000027345.1_ASM2734v1_genomic.fna.gz 
@@ -246,7 +248,7 @@ process assembly {
     script:
     """
     if [ "${qc}" == "PASS" ]; then
-        unicycler -1 ${read1} -2 ${read2} -o ${sampleID} --min_fasta_length 500 
+        unicycler -1 ${read1} -2 ${read2} -o ${sampleID} --min_fasta_length 500 -t $task.cpus
         mv ./${sampleID}/assembly.fasta ./${sampleID}.fasta
         qc_new="PASS"
         if [ ! -s ./${sampleID}.fasta ]; then
@@ -586,18 +588,24 @@ workflow {
     def ref1 = file("${params.reference_dir}/GCF_000027345.1_ASM2734v1_genomic.fna")
     def ref2 = file("${params.reference_dir}/GCF_001272835.1_ASM127283v1_genomic.fna")    
     if (ref1.exists() && ref2.exists()) {
-        println "Type1 and Type2 Reference files also exist, skipping download"
+        println "Type1 and Type2 Reference files exist, skipping download"
         references = Channel.fromPath([ref1, ref2])
     } else {
         println "Reference files downloading now..."
-        references = download_refs()
-    }
-    
-    references_ch = references.map { file ->
-        def id = file.getName().split('\\.1')[0]  // Extract the identifier 
-        [id, file]  // Return a tuple of [id, file]
+        download_refs()
+        references = download_refs.out.ref1
+                        .concat(download_refs.out.ref2)
     }
 
+    references_ch = references
+        .map { 
+            file ->
+            def id = file.getName().split('\\.1')[0]  // Extract the identifier 
+            [id, file]  // Return a tuple of [id, file]
+        }
+        .view()
+}
+/*
     ///// UNZIP ZIPPED READS /////
     if (!params.input) {
         error "ERROR: Missing required input parameter. Please specify the input directory using '--input'."
@@ -727,3 +735,4 @@ workflow {
 
     combine_snp_summary(snpSumOut1, qc_summary)
 }
+*/
