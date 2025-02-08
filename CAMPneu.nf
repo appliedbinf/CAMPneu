@@ -603,9 +603,7 @@ workflow {
             def id = file.getName().split('\\.1')[0]  // Extract the identifier 
             [id, file]  // Return a tuple of [id, file]
         }
-        .view()
-}
-/*
+
     ///// UNZIP ZIPPED READS /////
     if (!params.input) {
         error "ERROR: Missing required input parameter. Please specify the input directory using '--input'."
@@ -735,4 +733,3 @@ workflow {
 
     combine_snp_summary(snpSumOut1, qc_summary)
 }
-*/
