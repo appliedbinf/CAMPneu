@@ -476,15 +476,23 @@ process qc_summary {
     path("final_summary.txt")
 
     script:
+    //script info
+    def scriptName = workflow.scriptName.replace('.nf','')
+    def version = params.version
+    def runDate = new Date().format('yyyy-MM-dd')
+    // header and data
     def header = "SampleID\tKraken_Percent\tKraken_Class\tFastp_Score_Rate\tAverage_QC\tCoverage_X\tQC\tP1_Type\tANI\tST\tST_Profile"
     def row = sampleSummaries.join("\n")
+
     """
     touch final_summary_1.txt
+    infoline="${scriptName} - Comprehensive Analysis of Mycoplasma Pneumoniae\nVersion: ${version}\nDate: ${runDate}\n"
     newlines="Summary of Kraken Classification and QC thresholds\nReads below a qscore of 30 are marked as FAILED and dropped\nReads with coverage below 10X are marked as failed and dropped\n"
+    
     echo ${header} >> final_summary_1.txt
     echo '${row}' >> final_summary_1.txt
     awk '{printf "%-30s\\t%-35s\\t%-40s\\t%-20s\\t%-15s\\t%-15s\\t%-20s\\t%-15s\\t%-25s\\t%-15s\\t%-15s\\t%-15s\\n", \$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9, \$10, \$11, \$12}' final_summary_1.txt > final_summary.txt
-    echo -e "\$newlines" | cat - final_summary.txt > temp.txt && mv temp.txt final_summary.txt
+    echo -e "\$infoline\n\$newlines"  | cat - final_summary.txt > temp.txt && mv temp.txt final_summary.txt
     """
 }
 
