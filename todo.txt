@@ -1,0 +1,12 @@
+- Sample Reports not printing QRDR correct
+- Final Report not working
+
+
+- unicycler uses a default of 8 threads -> need to control with the process or fix at 1
+    - better to expose option of "max threads per process / max threads total" ??
+- need to check other tools for default threads & probably explicity fix them to 1 (or enable threading control)
+- amrfinder / mlst not part of the conda repo
+- amrfinder doesn't download database after first use
+    - run `amrfinder -u` when it downloads the refs?
+- freebayes SNP qual of 30 is quite low, why so low?
+- kraken hardcoded to 16 threads

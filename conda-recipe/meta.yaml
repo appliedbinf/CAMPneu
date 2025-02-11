@@ -32,6 +32,9 @@ requirements:
     - unicycler
     - freebayes
     - jq
+    - mlst
+    - ncbi-amrfinderplus
+    - snpeff
  
 test:
   commands:

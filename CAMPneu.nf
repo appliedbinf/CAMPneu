@@ -74,7 +74,18 @@ process createBedFile {
     printf "NC_000912.1\\t120272\\t120273\\nNC_000912.1\\t121167\\t121168\\nNC_000912.1\\t122118\\t122119\\nNC_000912.1\\t122119\\t122120\\nNC_000912.1\\t122486\\t122487\\nNC_000912.1\\t122666\\t122667\\nNC_000912.1\\t122672\\t122673" > snp_ref1.bed
     """
 }
- 
+
+process create_quinolone_amr_locations {
+    output:
+    path("quinolones_ref1.tsv"), emit: tsv
+
+    script:
+    """
+    #gene	nucl_change	aa_change	amr_class
+    printf "gyrA\tG295A\tAsp99Xaa\tquinolones\ngyrB\tG1327A\tAsp443Xaa\tquinolones\ngyrB\tG1391A\tArg464Lys\tquinolones\ngyrB\tA1448G\tGlu483Gly\tquinolones\nparC\tG241T\tGly81Cys\tquinolones\nparC\tC248T\tAla83Val\tquinolones\nparC\tG259A\tAsp87Xaa\tquinolones\nparE\tC1345T\tPro449Ser\tquinolones\ngyrA\tA141C\tPro47Pro\tTEST" > quinolones_ref1.tsv
+    """
+}
+
 process gunzip_reads {
 
     input:
@@ -114,7 +125,7 @@ process kraken {
     script:
     """
     kraken2 -db ${db} \
-    --threads 16 \
+    --threads 1 \
     --report ${sampleID}.report \
     --paired ${read1} ${read2} > ${sampleID}.Kraken.out
 
@@ -426,11 +437,37 @@ process vcf_subset {
 
     script:
     """
+    #23S macrolide snps
     bcftools view -i 'QUAL>=30' ${vcf} -Oz -o ${vcf}.gz
     bcftools index ${vcf}.gz
     chrom=\$(bcftools query -f '%CHROM\t%POS\t%ID\t%REF\t%ALT\n' ${vcf}.gz | head -1 | cut -f 1)
     bcftools view -r \${chrom}:${start}-${end} --no-header ${vcf}.gz > ${vcf.simpleName}_all23S.subset.vcf
     bcftools view -R ${snps} --no-header ${vcf}.gz > ${vcf.simpleName}_identified.snps.vcf
+    """
+}
+
+process quinolone_vcf_search {
+    publishDir "${params.output}/final_vcf", mode: 'copy', pattern: '*.vcf'
+
+    input:
+    tuple val(sample), path(vcf), val(qc), path(quinolone_res)
+
+    output:
+    tuple val(sample), path("${vcf.simpleName}_ann.vcf"), path("${vcf.simpleName}_quinolone_res_features.vcf"), val(qc)
+
+    script:
+    """
+    ##quinolone aa mutations
+    # run snpEff, need to replace reference chromosome name with "Chromosome" used by snpeff
+    bcftools view -i 'QUAL>=30' ${vcf} -Ov | sed "s/NC_000912.1/Chromosome/" | snpEff "Mycoplasma_pneumoniae_m129" > ${vcf.simpleName}_ann.vcf
+    
+    # search the annotated vcf file for specific changes listed in the aa_res file
+    while read -r line; do
+        gene=\$(echo \$line | awk '{print \$1}')
+        aa_change=\$(echo \$line | awk '{print \$3}' | sed -E "s/Xaa//g")
+        regex="\${gene}.*p.\${aa_change}"
+        grep -E "\${regex}" "${vcf.simpleName}_ann.vcf" >> "${vcf.simpleName}_quinolone_res_features.vcf" || true
+    done < ${quinolone_res}
     """
 }
 
@@ -517,14 +554,14 @@ process snp_summary {
 }
 
 process combine_snp_summary {
-    publishDir "${params.output}/summary", mode: 'copy'
+    //publishDir "${params.output}/summary", mode: 'copy'
 
     input:
     path(snp_files)
     path(mid_summary)
 
     output:
-    path("summary_stats.txt")
+    path("qc_snp_summary_stats.txt")
 
     script:
     """
@@ -532,7 +569,52 @@ process combine_snp_summary {
     cat header.tsv ${snp_files} > snp_summary_1.txt
     awk '{printf "%-30s\\t%-10s\\t%-10s\\t%-10s\\t%-10s\\t%-10s\\t%-10s\\n", \$1, \$2, \$3, \$4, \$5, \$6, \$7}' snp_summary_1.txt > snp_summary.txt
     echo -e "\nMacrolide resistant SNP analysis\nOnly passed samples are tested for presence of SNPs\n\n" | cat - snp_summary.txt > temp.txt && mv temp.txt snp_summary.txt
-    cat ${mid_summary} snp_summary.txt > summary_stats.txt
+    cat ${mid_summary} snp_summary.txt > qc_snp_summary_stats.txt
+    """
+}
+
+process quin_summary {
+
+    input:
+    tuple val(sample), path(snpeff_res), path(quin_res_vcf), val(qc)
+
+    output:
+    tuple val(sample), path("${sample}_qrdr.txt")
+
+    script:
+    """
+    if [ "${qc}" == "PASS" ]; then
+        if [ -s "${quin_res_vcf}" ]; then
+            ## Ugly bash code, grabs the INFO column which has the snpeff annotation
+            #Splits the snpeff ANN section (42) out
+            #Grabs the first part of the annotation & reformats it
+            ## \$4 == GENE, \$10 = nucleotide change, \$11 = aa change
+            cut -f8 "${quin_res_vcf}" | cut -d";" -f42 | cut -d"," -f1 | awk -v sample=${sample} 'BEGIN {FS="|"} {if(\$0 ~ /^ANN/ && \$0 ~ /missense_variant/) {print sample, \$4, gensub(/c\\.([0-9]+)([ACTG])>([ATCG])/, "\\\\2\\\\1\\\\3", "g", \$10), gensub(/p\\./,"","g",\$11), "QRDR"} }' > "${sample}_qrdr.txt"
+        else
+            echo -e "${sample}\tNA\tNA\tNA\tQuinolone_Sensitive\n" > ${sample}_qrdr.txt
+        fi
+    else 
+        touch ${sample}_qrdr.txt
+    fi
+    """
+}
+
+process combine_quin_summary {
+    publishDir "${params.output}/summary", mode: 'copy'
+
+    input:
+    path(qrdr_files)
+    path(qc_snp_summary)
+
+    output:
+    path("summary_stats.txt")
+
+    script:
+    """
+    echo -e "\n\nExperimental Quinolone resistance analysis\nOnly passed samples are tested for presence of QRDR variants\n" > qrdr_summary.txt
+    printf "%-30s\\t%-10s\\t%-20s\\t%-20s\\t%-10s\\n" "Sample" "Gene" "Nucl" "Prot" "Quinolone_Susceptibility(Sensitive/Resistant)" >> qrdr_summary.txt
+    cat ${qrdr_files} | awk '{printf "%-30s\\t%-10s\\t%-20s\\t%-20s\\t%-10s\\n", \$1, \$2, \$3, \$4, "Resistant"}' >> qrdr_summary.txt
+    cat ${qc_snp_summary} qrdr_summary.txt > summary_stats.txt
     """
 }
 
@@ -541,7 +623,7 @@ process combine_reports{
     publishDir "${params.output}/sample_reports", mode: 'copy'
     
     input:
-    tuple val(sample), path(kraken), path(fastp), path(coverage), path(mlst), path(bestRef), path(mrSnps)
+    tuple val(sample), path(kraken), path(fastp), path(coverage), path(mlst), path(bestRef), path(mrSnps), path(quin_res_vcf)
 
     output:
     path("${sample}_report.out")
@@ -567,6 +649,10 @@ process combine_reports{
     echo "Identification of Macrolide Resistant SNPs using Freebayes and bcftools" >> ${sample}_report.out
     echo -e "Sample\tPos\tALT\tREF\tSNP\tType" | cat - ${mrSnps} > temp && mv temp ${mrSnps}
     cat ${mrSnps} >> ${sample}_report.out
+    echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.out
+    echo "Experimental Identification of Quinolone Resistant SNPs using Freebayes, snpEff, and bcftools" >> ${sample}_report.out
+    echo -e "Sample\tGene\tNucleotide\tAminoAcid\tType" | cat - ${quin_res_vcf} > temp && mv temp ${quin_res_vcf}
+    cat ${quin_res_vcf} >> ${sample}_report.out
     echo "---------------------------------------------------------------------------------------------------------\n" >> ${sample}_report.out
     """
 }
@@ -624,6 +710,9 @@ workflow {
     } else {
         snpFile = params.snpFile
     }
+
+    ///// CREATE QUINOLONE SCREENING FILE
+    quinFile = create_quinolone_amr_locations()
 
     // Run Kraken and generate Kraken classification and report 
     kraken_input = unzipped_reads.combine(kraken_db)
@@ -684,16 +773,28 @@ workflow {
     samOut = samtools(minimapOut)
     freebayesOut = freebayes(samOut)
 
-    inputVcf = Channel.of(["120057", "122961", snpFile.bed])
+    //inputVcf = Channel.of(["120057", "122961", snpFile.bed])
+    inputVcf = Channel.of(["120057", "122961"])
+                .combine(snpFile.bed)
+    
     inputVcf = freebayesOut.combine(inputVcf)
 
+    /*Not necessary any more since we can just use combine to add the snpFile to the channel rather than creating a channel of a channel
     cleanedChannel = inputVcf.map { tuple ->
         def path = tuple[6].get() // Assuming the DataflowVariable is the 6th element
         tuple[0..5] + [path]      // Return the tuple with the path instead of the DataflowVariable
     }
-    
-    vcf_out = vcf_subset(cleanedChannel)
-    
+    */
+    //cleanedChannel.view()
+
+    vcf_out = vcf_subset(inputVcf)
+    quin_search_in = inputVcf.map {
+        it -> tuple it[0], it[2], it[3] //sample, reference, vcf_in, qc
+        }
+        .combine(quinFile)
+
+    quinolone_res_results = quinolone_vcf_search(quin_search_in)
+
     // amrfinder
     amrfinder(assemblies.genomes)
 
@@ -702,14 +803,18 @@ workflow {
     snpSumOut = snp_summary(vcf_out)
     snpSumOut.map { it[1] }
              .collect()
-             .set { snpSumOut1 }
-
+             .set { snp_files_concat }
+    quinSumOut = quin_summary( quinolone_res_results )
+    quinSumOut.map { it[1] }
+              .collect()
+              .set { quin_files_concat }
     combined = kraken_run.kraken_report
             .combine(fastp_run.fastp_report, by:0)
             .combine(cov_check.cov_report, by:0) 
             .combine(mlst.mlst_report, by:0)
             .combine(out.bestRef_report, by:0)
             .combine(snpSumOut, by:0)
+            .combine(quinSumOut, by:0)
             
     combine_reports(combined)
 
@@ -731,5 +836,6 @@ workflow {
 
     // summarising results from SNP analysis and combining with previous results to create one single run summary
 
-    combine_snp_summary(snpSumOut1, qc_summary)
+    qc_snp_summary = combine_snp_summary(snp_files_concat, qc_summary)
+    combine_quin_summary(quin_files_concat, qc_snp_summary)
 }
