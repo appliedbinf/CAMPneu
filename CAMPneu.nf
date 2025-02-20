@@ -554,7 +554,6 @@ process snp_summary {
 }
 
 process combine_snp_summary {
-    //publishDir "${params.output}/summary", mode: 'copy'
 
     input:
     path(snp_files)
