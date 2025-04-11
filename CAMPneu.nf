@@ -6,7 +6,7 @@ params.version = '1.1.1'
 params.input = ''
 params.output = ''
 params.help = false
-
+params.max_cpus = '1'
 ///// HELP MESSAGE /////
 
 if (params.help) {
@@ -26,7 +26,6 @@ if (params.help) {
 
 process downloadKrakenDB {
     
-    //publishDir "${HOME}/CAMPneu/db/krakendb", mode: 'copy'
     publishDir "${params.kraken_db_dir}", mode: 'copy'
 
     output:
@@ -43,11 +42,9 @@ process downloadKrakenDB {
 
 process download_refs {
 
-    //publishDir "${HOME}/CAMPneu/db/References", mode: 'copy'
     publishDir "${params.reference_dir}", mode: 'copy'
 
     output:
-    //tuple path('GCF_000027345.1_ASM2734v1_genomic.fna'), path('GCF_001272835.1_ASM127283v1_genomic.fna')
     path('GCF_000027345.1_ASM2734v1_genomic.fna'), emit: ref1
     path('GCF_001272835.1_ASM127283v1_genomic.fna'), emit: ref2
 
@@ -107,7 +104,8 @@ process gunzip_reads {
 }
  
 process kraken {
-
+    cpus params.max_cpus
+    maxForks 1
     publishDir "${params.output}/Kraken", mode: 'copy', pattern: '*tsv'
 
     input:
@@ -122,7 +120,7 @@ process kraken {
     script:
     """
     kraken2 -db ${db} \
-    --threads 1 \
+    --threads $task.cpus \
     --report ${sampleID}.report \
     --paired ${read1} ${read2} > ${sampleID}.Kraken.out
 
@@ -143,6 +141,7 @@ process kraken {
 }
 
 process fastp {
+    cpus params.max_cpus
     publishDir "${params.output}/qc_reads", mode: 'copy', pattern: '*.fq'
     
     input:
@@ -154,6 +153,7 @@ process fastp {
     shell:
     """
     fastp \
+    --thread ${task.cpus} \
     --in1 ${read1} \
     --in2 ${read2} \
     --out1 ${read1.baseName}_qc.fq \
@@ -200,7 +200,7 @@ process fastp_jq {
 }
 
 process coverage_check {
-
+    cpus params.max_cpus
     publishDir "${params.output}/Coverage_check", mode: 'copy', pattern: '*.tsv'
 
     input:
@@ -214,10 +214,8 @@ process coverage_check {
     script:
     """
     if [ "${qc}" == "PASS" ]; then
-        minimap2 -ax sr -o ${sampleID}.sam ${reference} ${qc_read1} ${qc_read2}
-        samtools view -b ${sampleID}.sam > ${sampleID}.bam
-        samtools sort ${sampleID}.bam > ${sampleID}.sorted.bam
-        samtools coverage ${sampleID}.sorted.bam > ${sampleID}.tsv
+        minimap2 -t $task.cpus -ax sr ${reference} ${qc_read1} ${qc_read2} | samtools sort -@ $task.cpus -o ${sampleID}.bam
+        samtools coverage ${sampleID}.bam > ${sampleID}.tsv
         awk '{printf "%-10s\\t%-10s\\t%-10s\\t%-10s\\t%-10s\\t%-10s\\t%-10s\\t%-10s\\n", \$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8}' ${sampleID}.tsv > ${sampleID}.cov.tsv
         coverage=\$(cut -f 7 ${sampleID}.cov.tsv | grep '^[0-9].*')
         coverage=\${coverage%.*}
@@ -243,7 +241,7 @@ process coverage_check {
 }
 
 process assembly {
-
+    cpus params.max_cpus
     publishDir "${params.output}/assemblies", mode: 'copy', pattern: '*.fasta'
 
     input:
@@ -273,8 +271,6 @@ process assembly {
     fi
     """
 }
-
-// Perform mlst 
 
 process mlst {
 
@@ -308,10 +304,8 @@ process mlst {
     """
 }
 
-// best ref
-
 process fastANI{
-
+    cpus params.max_cpus
     publishDir "${params.output}/fastANI", mode: 'copy', pattern: '*.out'
 
     input:
@@ -324,7 +318,7 @@ process fastANI{
     script:
     """
     if [ "${qc}" == "PASS" ]; then
-        fastANI -q ${assembly} -r ${reference} --minFraction 0.5 -o ${sample}_fastANI_1.out
+        fastANI -t $task.cpus -q ${assembly} -r ${reference} --minFraction 0.5 -o ${sample}_fastANI_1.out
         awk -F'\t' 'BEGIN {OFS="\t"} {print \$0, "${type}"}' ${sample}_fastANI_1.out > ${sample}_fastANI_2.out
         cut -f1-3,6 ${sample}_fastANI_2.out > ${sample}_${ref_label}_fastANI.out
     else 
@@ -371,10 +365,8 @@ process bestRef {
     """
 }
 
-/// Post assembly processing to identify SNPs from passed samples
-
 process minimap2 {
-
+    cpus params.max_cpus
     publishDir "${params.output}/minimap2", mode: 'copy', pattern: '*.sam'
 
     input:
@@ -385,25 +377,24 @@ process minimap2 {
 
     script:
     """
-    minimap2 -ax sr -o ${read1.baseName}.sam ${reference} ${read1} ${read2}
+    minimap2 -t $task.cpus -ax sr -o ${read1.baseName}.sam ${reference} ${read1} ${read2}
     """
 }
 
 process samtools {
-
+    cpus params.max_cpus
     publishDir "${params.output}/samtools", mode: 'copy', pattern: '*.bam'
 
     input:
     tuple val(sample), path(reference), path(minimapOut), val(qc)
 
     output:
-    tuple val(sample), path("${reference}"), path("${minimapOut.baseName}.sorted.bam"), val(qc)
+    tuple val(sample), path("${reference}"), path("${minimapOut.baseName}.bam"), val(qc)
 
     script:
     """
-    samtools view -b ${minimapOut} > ${minimapOut.baseName}.bam
-    samtools sort ${minimapOut.baseName}.bam > ${minimapOut.baseName}.sorted.bam
-    samtools index ${minimapOut.baseName}.sorted.bam
+    samtools view -h -@ $task.cpus ${minimapOut} | samtools sort -@ $task.cpus -o ${minimapOut.baseName}.bam
+    samtools index ${minimapOut.baseName}.bam
     """
 }
 
@@ -424,6 +415,7 @@ process freebayes {
 }
 
 process vcf_subset_23S {
+    label 'bcftools'
     publishDir "${params.output}/final_vcf", mode: 'copy', pattern: '*.vcf'
 
     input:
@@ -463,6 +455,7 @@ process vcf_subset_23S {
 }
 
 process vcf_subset_16S {
+    label 'bcftools'
     publishDir "${params.output}/final_vcf", mode: 'copy', pattern: '*.vcf'
 
     input:
@@ -543,8 +536,8 @@ process quinolone_vcf_search {
     """
 }
 
-/// AMR Gene identification
 process amrfinder {
+    cpus params.max_cpus
     publishDir "${params.output}/amrfinderplus", mode: 'copy', pattern: '*.out'
 
     input:
@@ -557,7 +550,7 @@ process amrfinder {
     script:
     """
     if [ "${qc}" == "PASS" ]; then
-        amrfinder -n ${fasta} -o ${fasta.baseName}.amr.out
+        amrfinder --threads $task.cpus -n ${fasta} -o ${fasta.baseName}.amr.out
 
         #check if amr genes are identified
         #header is created so we know the output will have atleast one line, checking that
@@ -576,7 +569,6 @@ process amrfinder {
     fi
     """
 }
-
 
 ///// SUMMARIES
 process generate_sample_report{
