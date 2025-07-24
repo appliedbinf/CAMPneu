@@ -4,6 +4,7 @@ process amrfinder {
 
     input:
     tuple val(sample), path(fasta), val(qc)
+    path(db)
 
     output:
     tuple val(sample), path("*.out"), emit: report
@@ -12,7 +13,7 @@ process amrfinder {
     script:
     """
     if [ "${qc}" == "PASS" ]; then
-        amrfinder --threads $task.cpus -n ${fasta} -o ${fasta.baseName}.amr.out
+        amrfinder --threads $task.cpus --database ${db} -n ${fasta} -o ${fasta.baseName}.amr.out
 
         #check if amr genes are identified
         #header is created so we know the output will have atleast one line, checking that

@@ -52,12 +52,16 @@ workflow {
     QAQC( 
         INITIALIZE_PIPELINE.out.unzipped_reads,
         INITIALIZE_PIPELINE.out.kraken_db, 
-        INITIALIZE_PIPELINE.out.references_ch,
+        INITIALIZE_PIPELINE.out.references_ch
         )
+
+
     ASSEMBLY_BASED_ANALYSIS(
         QAQC.out.coverage_out,
-        INITIALIZE_PIPELINE.out.references_ch
+        INITIALIZE_PIPELINE.out.references_ch,
+        INITIALIZE_PIPELINE.out.amrfinder_db
     )
+
     DETECT_SNPS(
         ASSEMBLY_BASED_ANALYSIS.out.passed_samples,
         INITIALIZE_PIPELINE.out.macrolide_file,

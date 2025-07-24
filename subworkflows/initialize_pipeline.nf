@@ -1,5 +1,6 @@
 include { uncompress_reads } from '../modules/uncompress_fastq.nf'
 include { downloadKrakenDB } from "../modules/download_kraken_db.nf"
+include { download_amrfinder_db } from "../modules/download_amrfinder_db.nf"
 include { create_23S_bed } from "../modules/create_23S_bed.nf"
 include { create_16S_bed } from "../modules/create_16S_bed.nf"
 include { create_quinolone_amr_locations } from "../modules/create_qrdr_bed.nf"
@@ -9,7 +10,7 @@ workflow INITIALIZE_PIPELINE {
     paired_reads
 
     main:
-    // Check if minikraken database exists, if not, download to $CONDA_PREFIX
+    // Check if minikraken database exists, if not, download to $HOME
     def kraken_db_dir = file("${params.kraken_db_dir}/minikraken_8GB_202003")
     if (kraken_db_dir.exists()) {
         println "Minikraken database exists, skipping download."
@@ -17,6 +18,16 @@ workflow INITIALIZE_PIPELINE {
     } else {
         println "Minikraken database downloading now..."
         kraken_db = downloadKrakenDB()        
+    }
+
+    //check for amrfinder database
+    def amrfinder_db_dir = file("${params.amrfinder_db}/latest")
+    if (amrfinder_db_dir.exists()) {
+        println "AMRFinder database exists, skipping download."
+        amrfinder_db = Channel.value(amrfinder_db_dir)
+    } else {
+        println "Downloading AMRFinder database..."
+        amrfinder_db = download_amrfinder_db()
     }
 
     /// REFERENCE FILES - TYPE 1 AND TYPE 2 /////
@@ -50,7 +61,9 @@ workflow INITIALIZE_PIPELINE {
     unzipped_reads
     references_ch
     kraken_db
+    amrfinder_db
     macrolide_file
     tet_file
     quinFile
+
 }

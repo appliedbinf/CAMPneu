@@ -8,6 +8,7 @@ workflow ASSEMBLY_BASED_ANALYSIS {
     take:
     cov_out
     references_ch
+    amrfinder_db
 
     main:
     // assembling the QC and Coverage threshold passed reads
@@ -46,7 +47,7 @@ workflow ASSEMBLY_BASED_ANALYSIS {
                     .filter { tuple -> tuple[-2] == "type1"}
 
     // amrfinder
-    amrfinder(assemblies.genomes)
+    amrfinder(assemblies.genomes, amrfinder_db)
 
     emit:
     passed_samples

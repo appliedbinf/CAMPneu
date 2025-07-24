@@ -6,12 +6,11 @@ process minimap2 {
     tuple val(sample), path(read1), path(read2), val(qc), val(type), path(reference)
 
     output:
-    tuple val(sample), path("${reference}"), path("${minimapOut.baseName}.bam"), val(qc)
+    tuple val(sample), path("${reference}"), path("${read1.baseName}.bam"), val(qc)
 
     script:
     """
-    minimap2 -t $task.cpus -ax sr -o ${read1.baseName}.sam ${reference} ${read1} ${read2}
-    samtools view -h -@ $task.cpus ${minimapOut} | samtools sort -@ $task.cpus -o ${minimapOut.baseName}.bam
-    samtools index ${minimapOut.baseName}.bam
+    minimap2 -t $task.cpus -ax sr ${reference} ${read1} ${read2} | samtools sort -@ task.cpus -o ${read1.baseName}.bam
+    samtools index ${read1.baseName}.bam
     """
 }
