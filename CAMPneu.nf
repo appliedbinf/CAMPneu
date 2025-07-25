@@ -2,7 +2,7 @@
 
 nextflow.enable.dsl = 2
 
-params.version = '1.2.0'
+params.version = '1.3.0'
 params.input = ''
 params.output = ''
 params.help = false
@@ -19,6 +19,7 @@ if (params.help) {
               |  --output    Directory where process outputs are saved          
               |Optional arguments:  
               |  --help      Print this message and exit""".stripMargin()
+
 
     println(help)
     exit(0)
@@ -55,7 +56,6 @@ workflow {
         INITIALIZE_PIPELINE.out.references_ch
         )
 
-
     ASSEMBLY_BASED_ANALYSIS(
         QAQC.out.coverage_out,
         INITIALIZE_PIPELINE.out.references_ch,
@@ -63,10 +63,10 @@ workflow {
     )
 
     DETECT_SNPS(
-        ASSEMBLY_BASED_ANALYSIS.out.passed_samples,
-        INITIALIZE_PIPELINE.out.macrolide_file,
-        INITIALIZE_PIPELINE.out.tet_file,
-        INITIALIZE_PIPELINE.out.quinFile
+        ASSEMBLY_BASED_ANALYSIS.out.samples,
+        channel.fromPath("$projectDir/data/macrolide_resistance_snps_23S.bed"),
+        channel.fromPath("$projectDir/data/tetracycline_resistance_snps_16S.bed"),
+        channel.fromPath("$projectDir/data/quinolone_resistance_snps_qrdr.bed")
     )
 
     SAMPLE_SUMMARY(

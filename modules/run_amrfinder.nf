@@ -27,8 +27,8 @@ process amrfinder {
         fi
     else
         touch ${fasta.baseName}.amr.out
-        echo "FAILED SAMPLE" >> ${fasta.baseName}.amr.out
-        amrfinder_gene_list="FAILED SAMPLE"
+        echo "No AMRFinder output since sample failed QC" >> ${fasta.baseName}.amr.out
+        amrfinder_gene_list="Failed_QC"
     fi
     """
 }

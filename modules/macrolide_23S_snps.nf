@@ -31,8 +31,12 @@ process vcf_subset_23S {
             macrolide_resistance="Susceptible"
         fi
     else
-        touch ${sample}_23Ssnps.txt
+        echo "sampled failed QC" > ${sample}_23Ssnps.txt
         macrolide_resistance="Failed_QC"
+
+        ##dummy files
+        touch "${vcf.simpleName}_all23S.subset.vcf"
+        touch "${vcf.simpleName}_identified.snps.vcf"
     fi
     """
 

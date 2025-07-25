@@ -1,9 +1,9 @@
 include { uncompress_reads } from '../modules/uncompress_fastq.nf'
 include { downloadKrakenDB } from "../modules/download_kraken_db.nf"
 include { download_amrfinder_db } from "../modules/download_amrfinder_db.nf"
-include { create_23S_bed } from "../modules/create_23S_bed.nf"
-include { create_16S_bed } from "../modules/create_16S_bed.nf"
-include { create_quinolone_amr_locations } from "../modules/create_qrdr_bed.nf"
+//include { create_23S_bed } from "../modules/create_23S_bed.nf"
+//include { create_16S_bed } from "../modules/create_16S_bed.nf"
+//include { create_quinolone_amr_locations } from "../modules/create_qrdr_bed.nf"
 
 workflow INITIALIZE_PIPELINE {
     take:
@@ -49,10 +49,6 @@ workflow INITIALIZE_PIPELINE {
             def id = file.getName().split('\\.1')[0]  // Extract the identifier 
             [id, file]  // Return a tuple of [id, file]
         }
-    ///// CREATE SNP FILES /////
-    macrolide_file = create_23S_bed()
-    tet_file = create_16S_bed()
-    quinFile = create_quinolone_amr_locations()
 
     //Inflate gzipped fastq
     unzipped_reads = uncompress_reads(paired_reads)
@@ -62,8 +58,5 @@ workflow INITIALIZE_PIPELINE {
     references_ch
     kraken_db
     amrfinder_db
-    macrolide_file
-    tet_file
-    quinFile
 
 }

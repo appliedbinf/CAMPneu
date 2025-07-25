@@ -16,9 +16,8 @@ process fastANI{
         awk -F'\t' 'BEGIN {OFS="\t"} {print \$0, "${type}"}' ${sample}_fastANI_1.out > ${sample}_fastANI_2.out
         cut -f1-3,6 ${sample}_fastANI_2.out > ${sample}_${ref_label}_fastANI.out
     else 
-        touch ${sample}_fastANI.out
-        echo ">${sample}" > ${sample}_fastANI.out
-        echo "Sample skipped due to QC failure" >> ${sample}_${ref_label}_fastANI.out
+        touch "${sample}_${ref_label}_fastANI.out"
+        echo "Sample skipped due to QC failure" >> "${sample}_${ref_label}_fastANI.out"
     fi
     """
 }

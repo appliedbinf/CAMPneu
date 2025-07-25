@@ -22,7 +22,7 @@ process mlst {
         qc="PASS"
     else
         touch ${sample}.mlst.out
-        echo "no sequence typing data for failed sample" > ${sample}.mlst.out
+        echo "No sequence typing data for failed sample" > ${sample}.mlst.out
         st="NA"
         profile="NA"
         qc="FAIL"

@@ -35,8 +35,12 @@ process vcf_subset_qrdr {
             quinolone_resistance="Susceptible"
         fi
     else 
-        touch ${sample}_qrdr.txt
-        quinolone_resistance="Fail_QC"
+        echo "sampled failed QC" > ${sample}_qrdr.txt
+        quinolone_resistance="Failed_QC"
+
+        #dummy files
+        touch "${vcf.simpleName}_ann.vcf"
+        touch "${vcf.simpleName}_quinolone_res_features.vcf"
     fi
     """
 }

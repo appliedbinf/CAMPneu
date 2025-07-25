@@ -6,13 +6,13 @@ include { vcf_subset_qrdr } from '../modules/quinolone_qrdr_snps.nf'
 
 workflow DETECT_SNPS {
     take:
-    passed_samples
-    bed_23S
-    bed_16S
-    quinFile
+    samples
+    bed_23S //from file in data
+    bed_16S //from file in data
+    quinFile //from file in data
     
     main:
-    minimapOut = minimap2(passed_samples)
+    minimapOut = minimap2(samples)
     freebayesOut = freebayes(minimapOut)
 
     //23S variants conferring macrolide resistance

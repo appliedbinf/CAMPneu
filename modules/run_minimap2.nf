@@ -10,7 +10,12 @@ process minimap2 {
 
     script:
     """
-    minimap2 -t $task.cpus -ax sr ${reference} ${read1} ${read2} | samtools sort -@ task.cpus -o ${read1.baseName}.bam
-    samtools index ${read1.baseName}.bam
+    if [ "${qc}" == "PASS" ]; then
+        minimap2 -t $task.cpus -ax sr ${reference} ${read1} ${read2} | samtools sort -@ task.cpus -o ${read1.baseName}.bam
+        samtools index ${read1.baseName}.bam
+    else
+        #dummy file
+        touch ${read1.baseName}.bam
+    fi
     """
 }

@@ -27,7 +27,7 @@ process summarize_fastp {
     elif [ "\${fastp_qc}" == PASS ] && [ "${qc}" == "FAIL" ]; then
         > ${read1.baseName}_fastpQC.tsv
         echo "sample failed quality check" > ${read1.baseName}_fastpQC.tsv
-        fastp_qc_new="FAIL"
+        fastp_qc_new="Failed_QC"
         avg_qscore="NA"
         rate="NA"
     fi

@@ -10,6 +10,11 @@ process freebayes {
 
     script:
     """
-    freebayes -f ${reference} --ploidy 1 ${bamFile} > ${bamFile.baseName}.vcf
+    if [ "${qc}" == "PASS" ]; then
+        freebayes -f ${reference} --ploidy 1 ${bamFile} > ${bamFile.baseName}.vcf
+    else
+        #dummy file
+        touch ${bamFile.baseName}.vcf
+    fi
     """
 }

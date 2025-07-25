@@ -31,8 +31,12 @@ process vcf_subset_16S {
             tetracycline_resistance="Susceptible"
         fi
     else 
-        touch ${sample}_16Ssnps.txt
-        tetracycline_resistance="Failed_QC"
+        echo "sampled failed QC" > ${sample}_16Ssnps.txt
+        tetracycline_resistance="Fail_QC"
+
+        ##dummy files
+        touch "${vcf.simpleName}_all16S.subset.vcf"
+        touch "${vcf.simpleName}_16S_Tet_identified.snps.vcf"
     fi
     """
 }
