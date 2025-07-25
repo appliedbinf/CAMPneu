@@ -2,19 +2,19 @@
 ***C**omprehensive **A**nalysis of **M**ycoplasma **Pneu**moniae*
 
 CAMPneu is a Nextflow bioinformatic pipeline that is reproducible, scalable, and suitable for a wide range of computation environments. 
-While extensible, early drafts of CAMPneu are targeted for Illumina paired-end sequence data with the objectives of 
+While extensible, CAMPneu is currently designed for Illumina paired-end sequence data with the objectives of: 
 1. Determining if the specimen belongs to the M. pneumoniae species
 2. Classification of the subtype (type1 or type2) of M. pneumoniae
 3. Identification of known SNPs conferring macrolide-resistance present within the sample
+4. *Under evaluation: Identification of SNPs identified from near-neighbors that confer resistance to tetracycline and fluoroquinolone antibiotics*
 
 **System Requirements:**
 
 CAMPneu requires systems to have the following installed/available:
-1. Conda
-2. Singularity
-3. Nextflow (to be used with the singularity profile)
+1. Nextflow (to be used with the singularity profile)
+2. Conda OR Singularity
 
-CAMPneu is designed to work with both Conda and Singularity container, offering flexibility and reproducibility in computational environments.
+CAMPneu is designed to work with both Conda and Singularity containers, offering flexibility and reproducibility in computational environments.
 
 **CONDA:**
 
@@ -23,7 +23,7 @@ Conda excels at managing dependencies and creating isolated environments. Conda 
 1. Installation using Conda
 ```
 conda install -n campneu -c bioconda -c conda-forge -c appliedbinf campneu 
-conda activate campneu 
+conda activate campneu
 ```
 
 2. Run command
@@ -66,7 +66,6 @@ Required arguments:
 ```
 Optional arguments:
 ``` 
-  --snpFile   Path to the custom SNP bed file
   --help      Print this message and exit
 ```
 
@@ -74,11 +73,13 @@ Optional arguments:
 1. **Kraken2 Taxonomic Classification:** Classifies input sequences based on a pre-built database.
 2. **Quality Control with Fastp:** Profiles and filters reads to ensure high-quality data.
 3. **Coverage Assessment with Samtools:** Calculates mean depth to evaluate sequencing coverage.
-4. **De Novo Assembly with Unicycler:** Reconstructs microbial genomes without a reference.
+4. **De Novo Assembly with Unicycler:** Reconstructs microbial genomes without a reference. This is only used to screen for AMR genes with AMRFinder.
 5. **ANI Calculation:** Determines the best match by comparing the assembled genomes to reference genomes.
-6. **Alignment with Minimap2:** Aligns reads to the best-matched reference genome.
+6. **Alignment with Minimap2:** Aligns reads to the type1 reference genome.
 7. **Variant Calling with FreeBayes:** Identifies SNPs and genetic variations against a type 1 reference.
-8. **Macrolide-Resistant SNP Identification:** Detects SNPs associated with macrolide resistance
+8. **Macrolide-Resistant SNP Identification:** Detects SNPs in the 23S rRNA gene associated with macrolide resistance
+9. **Tetracycline-Resistant SNP Identification:** Detects SNPs in the 16S rRNA gene associated with tetracycline resistance.
+10. **Quinolone-resistant SNP Identification:** Uses snpEff to identify specific mutations known to confer fluoroquinolone-resistance in closely related species.
 
 ### Cut Off Thresholds ###
 The pipeline sets specific thresholds for input paired reads/samples. Any reads or samples that do not meet these thresholds are marked as failed.
@@ -88,9 +89,44 @@ The pipeline sets specific thresholds for input paired reads/samples. Any reads 
 4. ANI to reference > 95
 5. SNP call quality > 100; Depth > 10
 
+### AMR Detection
+All genome locations are based on:  
+*M. pneumoniae* M129; NCBI Accession: NC_000912.1
+
+#### Macrolide SNPS
+CAMPNeu will report a potentially resistance strain if a variant is detected to ANY base in the below positions.
+| Gene Target | Gene Location | Genome Location | Variant | Note|
+| ----------- | ------------- | ------------ | ------- | --- |
+| 23S | 217 | 120273 | C > T | M129 has a G here |
+| 23S | 1112 | 121168 | T > G | M129 has a C here | 
+| 23S | 2063 | 122119 | A > G/T/C | |
+| 23S | 2064 | 122120 | A > G | |
+| 23S | 2431 | 122487 | A > G | |
+| 23S | 2611 | 122667 | C > G | M129 has a T here |
+| 23S | 2617 | 122673 | C > G |  |
+
+#### Tetracycline SNPs:
+CAMPNeu will check for the exact base change and will not report a variant if it doesn't confirm to the expectation listed in the table below.
+| Gene Target | Gene Location | Genome Location | Variant | Note |
+| ----------- | ------------- | ------------ | ------- | ----- |
+| 16S | 968 | 119280 | T > C | M129 has a G at this location | 
+| 16S | 1193 | 119505 | G > A | M129 has a T at this location |
+
+#### Fluoroquinolone SNPs:
+CAMPNeu uses snpEff to check for the specific amino acid changes listed below.
+| Gene Target | Gene Location (nt) | Gene Location (aa) | Genome Location | Variant (nt) | Variant (aa)
+| ----- | ----- | -------- | ------- | ----- | ------ |
+| GyrA | 295 | 99 | 5115 | G > A | Asp > any |
+| GyrB | 1327 | 443 | 4195 | G > A | Asp > any |
+| GyrB | 1391 | 464 | 4259 | G > A | Arg > Lys |
+| GyrB | 1448 | 483 | 4316 | A > G | Glu > Gly |
+| ParC | 241 | 81 | 158614 | G > T | Gly > Cys |
+| ParC | 248 | 83 | 158621 | C > T | Aps > any |
+| ParC | 259 | 87 | 158632 | G > A | Asp > any |
+| ParE | 1345 | 449 | 157811 | C > T | Pro > Ser |
+
 ### Required inputs: 
 1. Illumina paired-end sequences
-2. 23SsnpAnalysis.py: Python script for VCF manipulation and analysis 
 
 ### Outputs:
 The scripts generates output directories for each process which have the files generated in the process
