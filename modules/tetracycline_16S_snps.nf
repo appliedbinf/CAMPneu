@@ -32,7 +32,7 @@ process vcf_subset_16S {
         fi
     else 
         echo "sampled failed QC" > ${sample}_16Ssnps.txt
-        tetracycline_resistance="Fail_QC"
+        tetracycline_resistance="Failed_QC"
 
         ##dummy files
         touch "${vcf.simpleName}_all16S.subset.vcf"
